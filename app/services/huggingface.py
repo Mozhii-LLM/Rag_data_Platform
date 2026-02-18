@@ -62,6 +62,23 @@ class HuggingFaceService:
         """
         return bool(self.token and self.api)
     
+    def ensure_repo_exists(self, repo_id: str):
+        """
+        Ensure a dataset repository exists on HuggingFace Hub.
+        Creates it if it doesn't exist.
+        
+        Args:
+            repo_id: The repository ID (e.g., 'Mozhii-AI/RAW')
+        """
+        try:
+            self.api.repo_info(repo_id=repo_id, repo_type='dataset')
+        except RepositoryNotFoundError:
+            self.api.create_repo(
+                repo_id=repo_id,
+                repo_type='dataset',
+                private=False
+            )
+    
     # -------------------------------------------------------------------------
     # Upload Operations
     # -------------------------------------------------------------------------
@@ -89,6 +106,9 @@ class HuggingFaceService:
         target_repo = repo or self.raw_repo
         
         try:
+            # Ensure the repository exists
+            self.ensure_repo_exists(target_repo)
+            
             # Upload only the raw text content file
             content_path = f'{filename}.txt'
             self.api.upload_file(
@@ -144,6 +164,9 @@ class HuggingFaceService:
         target_repo = repo or self.cleaned_repo
         
         try:
+            # Ensure the repository exists
+            self.ensure_repo_exists(target_repo)
+            
             # Upload only the cleaned text content file
             self.api.upload_file(
                 path_or_fileobj=content.encode('utf-8'),
@@ -187,6 +210,9 @@ class HuggingFaceService:
         target_repo = repo or self.chunked_repo
         
         try:
+            # Ensure the repository exists
+            self.ensure_repo_exists(target_repo)
+            
             chunk_filename = f'{folder_name}/{chunk_file}'
             chunk_content = json.dumps(chunk_data, indent=2, ensure_ascii=False)
             
@@ -234,6 +260,9 @@ class HuggingFaceService:
         target_repo = repo or self.chunked_repo
         
         try:
+            # Ensure the repository exists
+            self.ensure_repo_exists(target_repo)
+            
             uploaded_count = 0
             
             for chunk in chunks:
