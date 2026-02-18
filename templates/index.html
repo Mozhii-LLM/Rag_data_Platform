@@ -190,8 +190,19 @@
                     </button>
                     <button class="btn btn-primary" id="raw-submit">
                         <span class="btn-icon">📤</span>
-                        Submit for Review
+                        Submit
                     </button>
+                </div>
+            </div>
+            
+            <!-- Submitted Raw Files List -->
+            <div class="submitted-files-section">
+                <div class="panel-section-header">
+                    <h3>📄 Submitted Raw Files</h3>
+                    <button class="btn btn-sm" id="raw-refresh-list">↻ Refresh</button>
+                </div>
+                <div class="submitted-files-list" id="raw-files-list">
+                    <div class="empty-state small"><p>No files submitted yet</p></div>
                 </div>
             </div>
         </section>
@@ -264,6 +275,17 @@
                     </div>
                 </div>
             </div>
+            
+            <!-- Submitted Cleaned Files List -->
+            <div class="submitted-files-section">
+                <div class="panel-section-header">
+                    <h3>🧹 Submitted Cleaned Files</h3>
+                    <button class="btn btn-sm" id="cleaning-refresh-list">↻ Refresh</button>
+                </div>
+                <div class="submitted-files-list" id="cleaned-files-list">
+                    <div class="empty-state small"><p>No cleaned files submitted yet</p></div>
+                </div>
+            </div>
         </section>
 
         <!-- =============================================================== -->
@@ -322,6 +344,17 @@
                             class="tamil-text"
                             disabled
                         ></textarea>
+                    </div>
+                    
+                    <!-- Heading -->
+                    <div class="form-group">
+                        <label for="chunk-heading">Heading</label>
+                        <input 
+                            type="text" 
+                            id="chunk-heading" 
+                            placeholder="Enter chunk heading / title..."
+                            disabled
+                        >
                     </div>
                     
                     <!-- Category Select -->

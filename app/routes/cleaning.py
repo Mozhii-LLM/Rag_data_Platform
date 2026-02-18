@@ -162,20 +162,20 @@ def submit_cleaned_data():
             'original_raw_id': original_metadata.get('id', ''),
             'content_length': len(content),
             'submitted_at': datetime.now().isoformat(),
-            'status': 'pending',
+            'status': 'approved',
             'submitted_by': 'cleaner'
         }
         
-        # Save to pending cleaned directory
-        pending_dir = Config.PENDING_CLEANED_DIR
-        content_path = os.path.join(pending_dir, f'{filename}.txt')
-        metadata_path = os.path.join(pending_dir, f'{filename}.meta.json')
+        # Save directly to approved cleaned directory
+        approved_dir = Config.APPROVED_CLEANED_DIR
+        content_path = os.path.join(approved_dir, f'{filename}.txt')
+        metadata_path = os.path.join(approved_dir, f'{filename}.meta.json')
         
-        # Check if already pending
+        # Check if already exists
         if os.path.exists(content_path):
             return jsonify({
                 'success': False,
-                'error': f'File "{filename}" already in cleaning queue'
+                'error': f'File "{filename}" already exists in cleaned data'
             }), 409
         
         # Save files
@@ -187,7 +187,7 @@ def submit_cleaned_data():
         
         return jsonify({
             'success': True,
-            'message': 'Cleaned data submitted. Awaiting admin approval.',
+            'message': 'Cleaned data submitted and approved successfully.',
             'submission_id': cleaned_metadata['id'],
             'filename': filename
         })
@@ -338,4 +338,114 @@ def get_file_content(filename):
         return jsonify({
             'success': False,
             'error': 'Failed to read file'
+        }), 500
+
+
+# -----------------------------------------------------------------------------
+# DELETE /api/cleaning/file/<filename> - Delete an Approved Cleaned File
+# -----------------------------------------------------------------------------
+@cleaning_bp.route('/file/<filename>', methods=['DELETE'])
+def delete_cleaned_file(filename):
+    """
+    Delete an approved cleaned data file.
+    
+    Args:
+        filename: Name of the file (without .txt extension)
+    
+    Returns:
+        JSON: Success/error response
+    """
+    try:
+        from ..config import Config
+        
+        content_path = os.path.join(Config.APPROVED_CLEANED_DIR, f'{filename}.txt')
+        meta_path = os.path.join(Config.APPROVED_CLEANED_DIR, f'{filename}.meta.json')
+        
+        if not os.path.exists(content_path):
+            return jsonify({
+                'success': False,
+                'error': f'File "{filename}" not found'
+            }), 404
+        
+        if os.path.exists(content_path):
+            os.remove(content_path)
+        if os.path.exists(meta_path):
+            os.remove(meta_path)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned file "{filename}" deleted successfully'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f'Error deleting cleaned file: {str(e)}')
+        return jsonify({
+            'success': False,
+            'error': 'Failed to delete file'
+        }), 500
+
+
+# -----------------------------------------------------------------------------
+# PUT /api/cleaning/file/<filename> - Update an Approved Cleaned File
+# -----------------------------------------------------------------------------
+@cleaning_bp.route('/file/<filename>', methods=['PUT'])
+def update_cleaned_file(filename):
+    """
+    Update content of an approved cleaned data file.
+    
+    Expected JSON body:
+    {
+        "content": "Updated cleaned Tamil text..."
+    }
+    
+    Args:
+        filename: Name of the file (without .txt extension)
+    
+    Returns:
+        JSON: Success/error response
+    """
+    try:
+        from ..config import Config
+        
+        data = request.get_json()
+        content = data.get('content', '').strip()
+        
+        if not content:
+            return jsonify({
+                'success': False,
+                'error': 'Content is required'
+            }), 400
+        
+        content_path = os.path.join(Config.APPROVED_CLEANED_DIR, f'{filename}.txt')
+        meta_path = os.path.join(Config.APPROVED_CLEANED_DIR, f'{filename}.meta.json')
+        
+        if not os.path.exists(content_path):
+            return jsonify({
+                'success': False,
+                'error': f'File "{filename}" not found'
+            }), 404
+        
+        # Update content
+        with open(content_path, 'w', encoding='utf-8') as f:
+            f.write(content)
+        
+        # Update metadata
+        if os.path.exists(meta_path):
+            with open(meta_path, 'r', encoding='utf-8') as f:
+                metadata = json.load(f)
+            metadata['content_length'] = len(content)
+            metadata['updated_at'] = datetime.now().isoformat()
+            with open(meta_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2, ensure_ascii=False)
+        
+        return jsonify({
+            'success': True,
+            'message': f'Cleaned file "{filename}" updated successfully'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f'Error updating cleaned file: {str(e)}')
+        return jsonify({
+            'success': False,
+            'error': 'Failed to update file'
         }), 500

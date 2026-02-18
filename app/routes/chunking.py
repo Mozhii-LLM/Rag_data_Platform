@@ -239,6 +239,7 @@ def submit_chunk():
         
         filename = data['filename'].strip()
         text = data['text']
+        heading = data.get('heading', '')
         category = data['category']
         source = data.get('source', 'unknown')
         overlap_reference = data.get('overlap_reference', '')
@@ -279,6 +280,7 @@ def submit_chunk():
         # Create chunk object
         chunk = {
             'chunk_id': chunk_id,
+            'heading': heading,
             'text': text,
             'language': language,
             'category': category,

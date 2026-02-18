@@ -68,12 +68,13 @@ class HuggingFaceService:
     
     def upload_raw_file(self, filename: str, content: str, metadata: Dict[str, Any], repo: Optional[str] = None) -> Dict[str, Any]:
         """
-        Upload a raw data file to mozhii-raw-data repository.
+        Upload a raw data file to the raw data repository.
+        Only uploads the .txt content file (no metadata).
         
         Args:
             filename: Name of the file (without extension)
             content: The raw text content
-            metadata: File metadata dictionary
+            metadata: File metadata dictionary (not uploaded)
             repo: Optional custom repository name (overrides default)
         
         Returns:
@@ -88,7 +89,7 @@ class HuggingFaceService:
         target_repo = repo or self.raw_repo
         
         try:
-            # Upload content file
+            # Upload only the raw text content file
             content_path = f'{filename}.txt'
             self.api.upload_file(
                 path_or_fileobj=content.encode('utf-8'),
@@ -96,17 +97,6 @@ class HuggingFaceService:
                 repo_id=target_repo,
                 repo_type='dataset',
                 commit_message=f'Add raw file: {filename}'
-            )
-            
-            # Upload metadata file
-            meta_path = f'{filename}.meta.json'
-            meta_content = json.dumps(metadata, indent=2, ensure_ascii=False)
-            self.api.upload_file(
-                path_or_fileobj=meta_content.encode('utf-8'),
-                path_in_repo=meta_path,
-                repo_id=target_repo,
-                repo_type='dataset',
-                commit_message=f'Add metadata for: {filename}'
             )
             
             return {
@@ -118,7 +108,7 @@ class HuggingFaceService:
         except RepositoryNotFoundError:
             return {
                 'success': False,
-                'error': f'Repository {self.raw_repo} not found. Please create it first.'
+                'error': f'Repository {target_repo} not found. Please create it first.'
             }
         except HfHubHTTPError as e:
             return {
@@ -133,12 +123,13 @@ class HuggingFaceService:
     
     def upload_cleaned_file(self, filename: str, content: str, metadata: Dict[str, Any], repo: Optional[str] = None) -> Dict[str, Any]:
         """
-        Upload a cleaned data file to mozhii-cleaned-data repository.
+        Upload a cleaned data file to the cleaned data repository.
+        Only uploads the .txt content file (no metadata).
         
         Args:
             filename: Name of the file
             content: The cleaned text content
-            metadata: File metadata dictionary
+            metadata: File metadata dictionary (not uploaded)
             repo: Optional custom repository name (overrides default)
         
         Returns:
@@ -153,23 +144,13 @@ class HuggingFaceService:
         target_repo = repo or self.cleaned_repo
         
         try:
-            # Upload content file
+            # Upload only the cleaned text content file
             self.api.upload_file(
                 path_or_fileobj=content.encode('utf-8'),
                 path_in_repo=f'{filename}.txt',
                 repo_id=target_repo,
                 repo_type='dataset',
                 commit_message=f'Add cleaned file: {filename}'
-            )
-            
-            # Upload metadata
-            meta_content = json.dumps(metadata, indent=2, ensure_ascii=False)
-            self.api.upload_file(
-                path_or_fileobj=meta_content.encode('utf-8'),
-                path_in_repo=f'{filename}.meta.json',
-                repo_id=target_repo,
-                repo_type='dataset',
-                commit_message=f'Add metadata for: {filename}'
             )
             
             return {

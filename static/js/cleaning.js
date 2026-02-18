@@ -301,7 +301,7 @@ async function handleCleaningSubmit() {
         if (response.success) {
             showToast(
                 'Submitted Successfully!',
-                `Cleaned "${CleaningState.selectedFile}" is pending admin approval.`,
+                `Cleaned "${CleaningState.selectedFile}" has been saved.`,
                 'success'
             );
             
@@ -311,8 +311,8 @@ async function handleCleaningSubmit() {
             // Refresh file list to update status
             await refreshCleaningFiles();
             
-            // Refresh admin badge
-            refreshAdminData();
+            // Refresh submitted cleaned files list
+            refreshCleanedFilesList();
             
         } else {
             throw new Error(response.error || 'Submission failed');
@@ -325,6 +325,119 @@ async function handleCleaningSubmit() {
         // Re-enable submit button
         CleaningElements.submitBtn.disabled = false;
         CleaningElements.submitBtn.innerHTML = '<span class="btn-icon">📤</span> Submit Cleaned Data';
+    }
+}
+
+// =============================================================================
+// SUBMITTED CLEANED FILES LIST
+// =============================================================================
+
+/**
+ * Refresh the list of submitted (approved) cleaned files
+ */
+async function refreshCleanedFilesList() {
+    const listEl = document.getElementById('cleaned-files-list');
+    if (!listEl) return;
+    
+    try {
+        const response = await api('/api/cleaning/approved');
+        
+        if (response.success && response.files.length > 0) {
+            listEl.innerHTML = response.files.map(file => `
+                <div class="submitted-file-item">
+                    <div class="submitted-file-info">
+                        <span class="submitted-file-name">${file.filename}</span>
+                        <span class="submitted-file-meta">${(file.language || 'ta').toUpperCase()} • ${(file.content_length || 0).toLocaleString()} chars • ${file.source || 'unknown'}</span>
+                    </div>
+                    <div class="submitted-file-actions">
+                        <button class="btn btn-sm btn-secondary" onclick="editCleanedFile('${file.filename}')" title="Edit">✏️</button>
+                        <button class="btn btn-sm btn-error" onclick="deleteCleanedFile('${file.filename}')" title="Remove">✕</button>
+                    </div>
+                </div>
+            `).join('');
+        } else {
+            listEl.innerHTML = '<div class="empty-state small"><p>No cleaned files submitted yet</p></div>';
+        }
+    } catch (error) {
+        console.error('Error loading cleaned files list:', error);
+    }
+}
+
+/**
+ * Delete a cleaned file
+ */
+async function deleteCleanedFile(filename) {
+    showModal('Delete Cleaned File', `<p>Are you sure you want to delete "<strong>${filename}</strong>"?</p>`, [
+        { text: 'Cancel', class: 'btn-secondary', onClick: hideModal },
+        { text: 'Delete', class: 'btn-error', onClick: async () => {
+            hideModal();
+            try {
+                const response = await api(`/api/cleaning/file/${filename}`, { method: 'DELETE' });
+                if (response.success) {
+                    showToast('Deleted', `"${filename}" has been deleted.`, 'success');
+                    refreshCleanedFilesList();
+                    refreshCleaningFiles();
+                } else {
+                    showToast('Error', response.error || 'Failed to delete', 'error');
+                }
+            } catch (error) {
+                showToast('Error', error.message, 'error');
+            }
+        }}
+    ]);
+}
+
+/**
+ * Edit a cleaned file
+ */
+async function editCleanedFile(filename) {
+    try {
+        const data = await api(`/api/cleaning/file/${filename}`);
+        if (!data.success) {
+            showToast('Error', 'Failed to load file', 'error');
+            return;
+        }
+        
+        showModal(`Edit Cleaned - ${filename}`, `
+            <div class="edit-form">
+                <div class="form-group">
+                    <label>Content <span class="char-count" id="clean-edit-char-count">${data.content.length} characters</span></label>
+                    <textarea id="clean-edit-content" rows="15" class="tamil-text">${data.content}</textarea>
+                </div>
+            </div>
+        `, [
+            { text: 'Cancel', class: 'btn-secondary', onClick: hideModal },
+            { text: 'Save', class: 'btn-primary', onClick: async () => {
+                const newContent = document.getElementById('clean-edit-content').value;
+                if (!newContent.trim()) {
+                    showToast('Error', 'Content cannot be empty', 'error');
+                    return;
+                }
+                try {
+                    const result = await api(`/api/cleaning/file/${filename}`, {
+                        method: 'PUT',
+                        body: JSON.stringify({ content: newContent })
+                    });
+                    if (result.success) {
+                        showToast('Saved', `"${filename}" updated.`, 'success');
+                        hideModal();
+                        refreshCleanedFilesList();
+                    } else {
+                        showToast('Error', result.error || 'Failed to save', 'error');
+                    }
+                } catch (error) {
+                    showToast('Error', error.message, 'error');
+                }
+            }}
+        ]);
+        
+        const contentArea = document.getElementById('clean-edit-content');
+        const charCount = document.getElementById('clean-edit-char-count');
+        contentArea.addEventListener('input', () => {
+            charCount.textContent = `${contentArea.value.length} characters`;
+        });
+    } catch (error) {
+        showToast('Error', error.message, 'error');
     }
 }
 
@@ -385,6 +498,15 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Set up event listeners
     initCleaningEventListeners();
+    
+    // Load submitted cleaned files list
+    refreshCleanedFilesList();
+    
+    // Refresh list button
+    const refreshListBtn = document.getElementById('cleaning-refresh-list');
+    if (refreshListBtn) {
+        refreshListBtn.addEventListener('click', refreshCleanedFilesList);
+    }
     
     console.log('🧹 Cleaning tab initialized');
 });
