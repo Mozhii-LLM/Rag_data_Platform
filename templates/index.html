@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <!--
+    =============================================================================
+    Mozhii RAG Data Platform - Main HTML Template
+    =============================================================================
+    This is the main entry point for the web application.
+    
+    Structure:
+        - Header with branding and navigation
+        - Three tabs: RAW DATA, CLEANING, CHUNKING
+        - Admin panel (sidebar toggle)
+        - Footer with status info
+    
+    Modern UI with:
+        - Clean, minimal design
+        - Responsive layout
+        - Dark/light mode support
+        - Tamil-friendly fonts
+    =============================================================================
+    -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mozhii RAG Data Platform</title>
+    
+    <!-- Google Fonts - Include Tamil-friendly font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Noto+Sans+Tamil:wght@400;500;600&display=swap" rel="stylesheet">
+    
+    <!-- Main Stylesheet -->
+    <link rel="stylesheet" href="/static/css/styles.css">
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="/static/assets/logo.png">
+</head>
+<body>
+    <!-- =================================================================== -->
+    <!-- LOGIN SCREEN -->
+    <!-- =================================================================== -->
+    <div class="login-overlay" id="loginOverlay">
+        <div class="login-card">
+            <div class="login-logo">
+                <img src="/static/assets/logo.png" alt="Mozhii Logo" style="width:64px;height:64px;border-radius:12px;">
+            </div>
+            <h2 class="login-title">Mozhii RAG Data Platform</h2>
+            <p class="login-subtitle">Sign in to continue</p>
+            <div class="login-form">
+                <div class="login-field">
+                    <label for="login-username">Username</label>
+                    <input type="text" id="login-username" placeholder="Enter username" autocomplete="off">
+                </div>
+                <div class="login-field">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" placeholder="Enter password">
+                </div>
+                <p class="login-error" id="loginError"></p>
+                <button class="btn btn-primary login-btn" id="loginBtn">Sign In</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- APP WRAPPER (hidden until login) -->
+    <!-- =================================================================== -->
+    <div id="appWrapper" style="display:none;">
+
+    <!-- =================================================================== -->
+    <!-- HEADER - Platform Branding and Navigation -->
+    <!-- =================================================================== -->
+    <header class="header">
+        <div class="header-brand">
+            <div class="logo">
+                <img src="/static/assets/logo.png" alt="Mozhii Logo">
+            </div>
+            <div class="brand-text">
+                <h1>Mozhii RAG Data Platform</h1>
+                <p>Creating Universal Tamil AI Ecosystem</p>
+            </div>
+        </div>
+        
+        <!-- Admin Toggle Button -->
+        <button class="admin-toggle" id="adminToggle" title="Admin Panel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/>
+                <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/>
+            </svg>
+            <span class="pending-badge" id="pendingBadge">0</span>
+        </button>
+    </header>
+
+    <!-- =================================================================== -->
+    <!-- TAB NAVIGATION -->
+    <!-- =================================================================== -->
+    <nav class="tab-nav">
+        <button class="tab-btn active" data-tab="raw">
+            <span class="tab-icon">📥</span>
+            <span class="tab-label">RAW DATA</span>
+            <span class="tab-desc">Collect Content</span>
+        </button>
+        <button class="tab-btn" data-tab="cleaning">
+            <span class="tab-icon">🧹</span>
+            <span class="tab-label">CLEANING</span>
+            <span class="tab-desc">Clean & Process</span>
+        </button>
+        <button class="tab-btn" data-tab="chunking">
+            <span class="tab-icon">🧩</span>
+            <span class="tab-label">CHUNKING</span>
+            <span class="tab-desc">Create Chunks</span>
+        </button>
+    </nav>
+
+    <!-- =================================================================== -->
+    <!-- MAIN CONTENT AREA -->
+    <!-- =================================================================== -->
+    <main class="main-content">
+        
+        <!-- =============================================================== -->
+        <!-- RAW DATA TAB -->
+        <!-- Allows collectors to submit raw Tamil content -->
+        <!-- =============================================================== -->
+        <section class="tab-panel active" id="raw-panel">
+            <div class="panel-header">
+                <h2>📥 Raw Data Collection</h2>
+                <p>Submit raw Tamil educational content for processing</p>
+            </div>
+            
+            <div class="form-container">
+                <!-- File Name Input -->
+                <div class="form-group">
+                    <label for="raw-filename">File Name</label>
+                    <input 
+                        type="text" 
+                        id="raw-filename" 
+                        placeholder="e.g., grade_10_science"
+                        pattern="[a-zA-Z0-9_-]+"
+                    >
+                    <span class="form-hint">Use letters, numbers, underscores, and hyphens only</span>
+                </div>
+                
+                <!-- Language Select -->
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="raw-language">Language</label>
+                        <select id="raw-language">
+                            <option value="ta" selected>Tamil (தமிழ்)</option>
+                            <option value="en">English</option>
+                            <option value="hi">Hindi</option>
+                            <option value="te">Telugu</option>
+                            <option value="ml">Malayalam</option>
+                            <option value="kn">Kannada</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Source Type Select -->
+                    <div class="form-group">
+                        <label for="raw-source">Source Type</label>
+                        <select id="raw-source">
+                            <option value="gov_textbook">Government Textbook</option>
+                            <option value="wikipedia">Wikipedia</option>
+                            <option value="news_article">News Article</option>
+                            <option value="blog">Blog</option>
+                            <option value="book">Book</option>
+                            <option value="research_paper">Research Paper</option>
+                            <option value="manual_entry">Manual Entry</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <!-- Content Textarea -->
+                <div class="form-group">
+                    <label for="raw-content">
+                        Content
+                        <span class="char-count" id="raw-char-count">0 characters</span>
+                    </label>
+                    <textarea 
+                        id="raw-content" 
+                        rows="12" 
+                        placeholder="Paste your Tamil content here..."
+                        class="tamil-text"
+                    ></textarea>
+                </div>
+                
+                <!-- Action Buttons -->
+                <div class="form-actions">
+                    <button class="btn btn-secondary" id="raw-clear">
+                        Clear
+                    </button>
+                    <button class="btn btn-primary" id="raw-submit">
+                        <span class="btn-icon">📤</span>
+                        Submit for Review
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- CLEANING TAB -->
+        <!-- Allows cleaning team to process raw content -->
+        <!-- =============================================================== -->
+        <section class="tab-panel" id="cleaning-panel">
+            <div class="panel-header">
+                <h2>🧹 Data Cleaning</h2>
+                <p>Clean and normalize raw content for processing</p>
+            </div>
+            
+            <div class="split-panel">
+                <!-- Left: File List -->
+                <div class="file-list-panel">
+                    <div class="panel-section-header">
+                        <h3>Available Raw Files</h3>
+                        <button class="btn btn-sm" id="cleaning-refresh">↻ Refresh</button>
+                    </div>
+                    <div class="file-list" id="cleaning-file-list">
+                        <div class="empty-state">
+                            <p>No raw files available</p>
+                            <span>Submit content in the RAW DATA tab first</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Right: Cleaning Form -->
+                <div class="cleaning-form-panel">
+                    <div class="panel-section-header">
+                        <h3>Clean Content</h3>
+                        <button class="btn btn-sm" id="cleaning-copy" disabled>📋 Copy Raw</button>
+                    </div>
+                    
+                    <!-- Raw Content Preview -->
+                    <div class="form-group">
+                        <label>Original Raw Content</label>
+                        <div class="content-preview tamil-text" id="cleaning-raw-preview">
+                            <span class="placeholder">Select a file to view content</span>
+                        </div>
+                    </div>
+                    
+                    <!-- Cleaned Content Input -->
+                    <div class="form-group">
+                        <label for="cleaning-content">
+                            Cleaned Content
+                            <span class="char-count" id="cleaning-char-count">0 characters</span>
+                        </label>
+                        <textarea 
+                            id="cleaning-content" 
+                            rows="10" 
+                            placeholder="Paste your cleaned content here..."
+                            class="tamil-text"
+                            disabled
+                        ></textarea>
+                    </div>
+                    
+                    <!-- Hidden field for selected filename -->
+                    <input type="hidden" id="cleaning-selected-file">
+                    
+                    <!-- Action Buttons -->
+                    <div class="form-actions">
+                        <button class="btn btn-secondary" id="cleaning-clear" disabled>Clear</button>
+                        <button class="btn btn-primary" id="cleaning-submit" disabled>
+                            <span class="btn-icon">📤</span>
+                            Submit Cleaned Data
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =============================================================== -->
+        <!-- CHUNKING TAB -->
+        <!-- Allows QA team to create RAG-ready chunks -->
+        <!-- =============================================================== -->
+        <section class="tab-panel" id="chunking-panel">
+            <div class="panel-header">
+                <h2>🧩 Content Chunking</h2>
+                <p>Create RAG-ready chunks from cleaned content</p>
+            </div>
+            
+            <div class="split-panel chunking-layout">
+                <!-- Left: Cleaned File List -->
+                <div class="file-list-panel">
+                    <div class="panel-section-header">
+                        <h3>Cleaned Files</h3>
+                        <button class="btn btn-sm" id="chunking-refresh">↻ Refresh</button>
+                    </div>
+                    <div class="file-list" id="chunking-file-list">
+                        <div class="empty-state">
+                            <p>No cleaned files available</p>
+                            <span>Complete cleaning in the CLEANING tab first</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Middle: Source Content -->
+                <div class="source-content-panel">
+                    <div class="panel-section-header">
+                        <h3>Source Content</h3>
+                        <span class="source-info" id="chunking-source-info"></span>
+                    </div>
+                    <div class="source-content tamil-text" id="chunking-source-content">
+                        <span class="placeholder">Select a file to view content</span>
+                    </div>
+                </div>
+                
+                <!-- Right: Chunk Creation -->
+                <div class="chunk-form-panel">
+                    <div class="panel-section-header">
+                        <h3>Create Chunk</h3>
+                        <span class="chunk-index" id="chunk-index-display">Chunk #--</span>
+                    </div>
+                    
+                    <!-- Chunk Text -->
+                    <div class="form-group">
+                        <label for="chunk-text">
+                            Chunk Text
+                            <span class="char-count" id="chunk-char-count">0 characters</span>
+                        </label>
+                        <textarea 
+                            id="chunk-text" 
+                            rows="6" 
+                            placeholder="Select text from source and paste here..."
+                            class="tamil-text"
+                            disabled
+                        ></textarea>
+                    </div>
+                    
+                    <!-- Category Select -->
+                    <div class="form-group">
+                        <label for="chunk-category">Category</label>
+                        <select id="chunk-category" disabled>
+                            <option value="education">Education</option>
+                            <option value="literature">Literature</option>
+                            <option value="news">News</option>
+                            <option value="science">Science</option>
+                            <option value="history">History</option>
+                            <option value="culture">Culture</option>
+                            <option value="technology">Technology</option>
+                            <option value="health">Health</option>
+                            <option value="legal">Legal</option>
+                            <option value="government">Government</option>
+                            <option value="religion">Religion</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Source Override -->
+                    <div class="form-group">
+                        <label for="chunk-source">Source (Optional)</label>
+                        <input 
+                            type="text" 
+                            id="chunk-source" 
+                            placeholder="Override source if needed"
+                            disabled
+                        >
+                    </div>
+                    
+                    <!-- Overlap Reference -->
+                    <div class="form-group">
+                        <label for="chunk-overlap">Overlap Reference (Optional)</label>
+                        <textarea 
+                            id="chunk-overlap" 
+                            rows="2" 
+                            placeholder="Context from previous chunk for continuity..."
+                            disabled
+                        ></textarea>
+                    </div>
+                    
+                    <!-- Hidden field -->
+                    <input type="hidden" id="chunking-selected-file">
+                    
+                    <!-- Action Buttons -->
+                    <div class="form-actions">
+                        <button class="btn btn-secondary" id="chunk-preview" disabled>
+                            👁️ Preview
+                        </button>
+                        <button class="btn btn-primary" id="chunk-submit" disabled>
+                            <span class="btn-icon">➕</span>
+                            Add Chunk
+                        </button>
+                    </div>
+                    
+                    <!-- Existing Chunks List -->
+                    <div class="chunks-list-section">
+                        <h4>Created Chunks</h4>
+                        <div class="chunks-list" id="chunks-list">
+                            <div class="empty-state small">
+                                <p>No chunks yet</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- =================================================================== -->
+    <!-- ADMIN SIDEBAR -->
+    <!-- Admin approval queue and controls -->
+    <!-- =================================================================== -->
+    <aside class="admin-sidebar" id="adminSidebar">
+        <div class="sidebar-header">
+            <h3>⚙️ Admin Panel</h3>
+            <button class="close-btn" id="adminClose">✕</button>
+        </div>
+        
+        <!-- Stats Overview -->
+        <div class="stats-overview">
+            <div class="stat-card">
+                <span class="stat-value" id="stat-pending">0</span>
+                <span class="stat-label">Pending</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="stat-approved">0</span>
+                <span class="stat-label">Approved</span>
+            </div>
+        </div>
+        
+        <!-- Pending Items -->
+        <div class="pending-section">
+            <h4>📥 Pending Raw Data</h4>
+            <div class="pending-list" id="pending-raw-list">
+                <div class="empty-state small">No pending items</div>
+            </div>
+        </div>
+        
+        <div class="pending-section">
+            <h4>🧹 Pending Cleaned Data</h4>
+            <div class="pending-list" id="pending-cleaned-list">
+                <div class="empty-state small">No pending items</div>
+            </div>
+        </div>
+        
+        <div class="pending-section">
+            <h4>🧩 Pending Chunks</h4>
+            <div class="pending-list" id="pending-chunks-list">
+                <div class="empty-state small">No pending items</div>
+            </div>
+        </div>
+        
+        <!-- HuggingFace Configuration -->
+        <div class="sync-section">
+            <h4>🤗 HuggingFace Setup</h4>
+            <div class="form-group">
+                <label for="hf-token-input" style="font-size: 0.85rem;">HF Token</label>
+                <input 
+                    type="password" 
+                    id="hf-token-input" 
+                    placeholder="hf_..." 
+                    style="font-size: 0.85rem; padding: 0.5rem;"
+                >
+            </div>
+            <div class="form-group">
+                <label for="hf-raw-repo-input" style="font-size: 0.85rem;">📥 Raw Data Repo</label>
+                <input 
+                    type="text" 
+                    id="hf-raw-repo-input" 
+                    placeholder="username/mozhii-raw-data" 
+                    style="font-size: 0.85rem; padding: 0.5rem;"
+                >
+            </div>
+            <div class="form-group">
+                <label for="hf-cleaned-repo-input" style="font-size: 0.85rem;">🧹 Cleaned Data Repo</label>
+                <input 
+                    type="text" 
+                    id="hf-cleaned-repo-input" 
+                    placeholder="username/mozhii-cleaned-data" 
+                    style="font-size: 0.85rem; padding: 0.5rem;"
+                >
+            </div>
+            <div class="form-group">
+                <label for="hf-chunked-repo-input" style="font-size: 0.85rem;">🧩 Chunked Data Repo</label>
+                <input 
+                    type="text" 
+                    id="hf-chunked-repo-input" 
+                    placeholder="username/mozhii-chunked-data" 
+                    style="font-size: 0.85rem; padding: 0.5rem;"
+                >
+            </div>
+            <button class="btn btn-primary full-width" id="sync-hf-btn">
+                🚀 Push to HuggingFace
+            </button>
+            <span class="sync-info">Push approved data to separate HF repos</span>
+        </div>
+    </aside>
+    
+    <!-- Overlay for mobile -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- =================================================================== -->
+    <!-- TOAST NOTIFICATIONS -->
+    <!-- =================================================================== -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- =================================================================== -->
+    <!-- MODAL DIALOGS -->
+    <!-- =================================================================== -->
+    <div class="modal-overlay" id="modalOverlay">
+        <div class="modal" id="modal">
+            <div class="modal-header">
+                <h3 id="modal-title">Modal Title</h3>
+                <button class="close-btn" id="modalClose">✕</button>
+            </div>
+            <div class="modal-body" id="modal-body">
+                <!-- Dynamic content -->
+            </div>
+            <div class="modal-footer" id="modal-footer">
+                <!-- Dynamic buttons -->
+            </div>
+        </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- JAVASCRIPT FILES -->
+    <!-- =================================================================== -->
+    </div><!-- end appWrapper -->
+
+    <script src="/static/js/main.js"></script>
+    <script src="/static/js/raw-data.js"></script>
+    <script src="/static/js/cleaning.js"></script>
+    <script src="/static/js/chunking.js"></script>
+</body>
+</html>

@@ -1,0 +1,33 @@
+# =============================================================================
+# Mozhii RAG Data Platform - Python Dependencies
+# =============================================================================
+# This file lists all required Python packages for the platform.
+# Install using: pip install -r requirements.txt
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Core Web Framework
+# -----------------------------------------------------------------------------
+Flask==3.0.0                    # Lightweight WSGI web application framework
+Flask-CORS==4.0.0               # Cross-Origin Resource Sharing support
+
+# -----------------------------------------------------------------------------
+# HuggingFace Integration
+# -----------------------------------------------------------------------------
+huggingface-hub==0.20.0         # Official HuggingFace Hub client library
+
+# -----------------------------------------------------------------------------
+# Environment & Configuration
+# -----------------------------------------------------------------------------
+python-dotenv==1.0.0            # Load environment variables from .env file
+
+# -----------------------------------------------------------------------------
+# Production Server
+# -----------------------------------------------------------------------------
+gunicorn==21.2.0                # Production WSGI server for deployment
+
+# -----------------------------------------------------------------------------
+# Utilities
+# -----------------------------------------------------------------------------
+uuid==1.30                      # UUID generation for unique identifiers
+python-dateutil==2.8.2          # Date/time utilities
