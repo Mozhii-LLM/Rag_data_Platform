@@ -789,6 +789,91 @@ def get_stats():
         }), 500
 
 # -----------------------------------------------------------------------------
+# POST /api/admin/test-hf - Test HuggingFace Connection
+# -----------------------------------------------------------------------------
+@admin_bp.route('/test-hf', methods=['POST'])
+def test_hf_connection():
+    """
+    Test HuggingFace connection, token validity, and create repos if needed.
+    
+    Expected JSON body:
+    {
+        "hf_token": "hf_...",
+        "raw_repo": "Org/RepoName",
+        "cleaned_repo": "Org/RepoName",
+        "chunked_repo": "Org/RepoName"
+    }
+    """
+    try:
+        data = request.get_json()
+        hf_token = data.get('hf_token') or os.getenv('HF_TOKEN')
+        
+        if not hf_token:
+            return jsonify({
+                'success': False,
+                'error': 'HuggingFace token is required'
+            }), 400
+        
+        from ..services.huggingface import HuggingFaceService
+        from ..config import Config
+        
+        hf_service = HuggingFaceService(token=hf_token)
+        
+        # Test 1: Verify token by getting user info
+        try:
+            user_info = hf_service.api.whoami()
+            username = user_info.get('name', 'unknown')
+        except Exception as e:
+            return jsonify({
+                'success': False,
+                'error': f'Invalid token or connection error: {str(e)}'
+            }), 400
+        
+        # Test 2: Try to create/verify each repo
+        repos = {
+            'raw': data.get('raw_repo') or Config.HF_RAW_REPO,
+            'cleaned': data.get('cleaned_repo') or Config.HF_CLEANED_REPO,
+            'chunked': data.get('chunked_repo') or Config.HF_CHUNKED_REPO
+        }
+        
+        repo_status = {}
+        for repo_type, repo_id in repos.items():
+            try:
+                hf_service.ensure_repo_exists(repo_id)
+                repo_status[repo_type] = {'repo': repo_id, 'status': 'ready'}
+            except Exception as e:
+                repo_status[repo_type] = {'repo': repo_id, 'status': 'error', 'error': str(e)}
+        
+        # Count local approved files
+        file_counts = {
+            'raw': len([f for f in os.listdir(Config.APPROVED_RAW_DIR) if f.endswith('.txt')]) if os.path.exists(Config.APPROVED_RAW_DIR) else 0,
+            'cleaned': len([f for f in os.listdir(Config.APPROVED_CLEANED_DIR) if f.endswith('.txt')]) if os.path.exists(Config.APPROVED_CLEANED_DIR) else 0,
+            'chunked': sum(
+                len([f for f in os.listdir(os.path.join(Config.APPROVED_CHUNKED_DIR, d)) if f.endswith('.json')])
+                for d in os.listdir(Config.APPROVED_CHUNKED_DIR)
+                if os.path.isdir(os.path.join(Config.APPROVED_CHUNKED_DIR, d))
+            ) if os.path.exists(Config.APPROVED_CHUNKED_DIR) else 0
+        }
+        
+        all_repos_ok = all(r['status'] == 'ready' for r in repo_status.values())
+        
+        return jsonify({
+            'success': all_repos_ok,
+            'user': username,
+            'repos': repo_status,
+            'file_counts': file_counts,
+            'message': 'All repos ready!' if all_repos_ok else 'Some repos had errors'
+        })
+        
+    except Exception as e:
+        current_app.logger.error(f'HF test error: {str(e)}')
+        return jsonify({
+            'success': False,
+            'error': f'Test failed: {str(e)}'
+        }), 500
+
+
+# -----------------------------------------------------------------------------
 # POST /api/admin/push-to-hf - Push Approved Data to HuggingFace
 # -----------------------------------------------------------------------------
 @admin_bp.route('/push-to-hf', methods=['POST'])
@@ -837,6 +922,24 @@ def push_to_huggingface():
                 'error': 'HuggingFace service not configured properly'
             }), 400
         
+        # Ensure all target repos exist before uploading
+        raw_repo = data.get('raw_repo') or data.get('repo') or Config.HF_RAW_REPO
+        cleaned_repo = data.get('cleaned_repo') or data.get('repo') or Config.HF_CLEANED_REPO
+        chunked_repo = data.get('chunked_repo') or data.get('repo') or Config.HF_CHUNKED_REPO
+        
+        repo_errors = []
+        for repo_name, repo_id in [('raw', raw_repo), ('cleaned', cleaned_repo), ('chunked', chunked_repo)]:
+            try:
+                hf_service.ensure_repo_exists(repo_id)
+            except Exception as e:
+                repo_errors.append(f'{repo_name} ({repo_id}): {str(e)}')
+        
+        if repo_errors:
+            return jsonify({
+                'success': False,
+                'error': 'Failed to create/access repos: ' + '; '.join(repo_errors)
+            }), 400
+        
         results = {
             'raw': {'uploaded': 0, 'failed': 0, 'files': []},
             'cleaned': {'uploaded': 0, 'failed': 0, 'files': []},
@@ -845,7 +948,7 @@ def push_to_huggingface():
         
         # Push raw files
         if push_type in ['raw', 'all']:
-            repo = data.get('raw_repo') or data.get('repo') or Config.HF_RAW_REPO
+            repo = raw_repo
             if os.path.exists(Config.APPROVED_RAW_DIR):
                 for filename in os.listdir(Config.APPROVED_RAW_DIR):
                     if filename.endswith('.txt'):
@@ -873,7 +976,7 @@ def push_to_huggingface():
         
         # Push cleaned files
         if push_type in ['cleaned', 'all']:
-            repo = data.get('cleaned_repo') or data.get('repo') or Config.HF_CLEANED_REPO
+            repo = cleaned_repo
             if os.path.exists(Config.APPROVED_CLEANED_DIR):
                 for filename in os.listdir(Config.APPROVED_CLEANED_DIR):
                     if filename.endswith('.txt'):
@@ -901,7 +1004,7 @@ def push_to_huggingface():
         
         # Push chunks
         if push_type in ['chunked', 'all']:
-            repo = data.get('chunked_repo') or data.get('repo') or Config.HF_CHUNKED_REPO
+            repo = chunked_repo
             if os.path.exists(Config.APPROVED_CHUNKED_DIR):
                 for folder_name in os.listdir(Config.APPROVED_CHUNKED_DIR):
                     folder_path = os.path.join(Config.APPROVED_CHUNKED_DIR, folder_name)

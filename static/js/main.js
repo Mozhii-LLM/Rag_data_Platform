@@ -659,32 +659,6 @@ async function saveHFConfig() {
 }
 
 /**
- * Push approved data to HuggingFace
- */
-async function pushToHuggingFace() {
-    try {
-        showToast('Uploading...', 'Pushing data to HuggingFace', 'info');
-        
-        const result = await api('/api/admin/push-to-hf', {
-            method: 'POST',
-            body: JSON.stringify({ type: 'all' })
-        });
-        
-        if (result.success) {
-            const totalUploaded = result.results.raw.uploaded + 
-                                  result.results.cleaned.uploaded + 
-                                  result.results.chunked.uploaded;
-            showToast('Success!', `Pushed ${totalUploaded} files to HuggingFace`, 'success');
-        } else {
-            showToast('Error', result.error || 'Push failed', 'error');
-        }
-        
-    } catch (error) {
-        showToast('Error', `Push failed: ${error.message}`, 'error');
-    }
-}
-
-/**
  * Initialize HuggingFace configuration handlers
  */
 function initHFConfig() {
@@ -793,6 +767,77 @@ async function editItem(type, filename) {
 /**
  * Push approved data to HuggingFace
  */
+/**
+ * Test HuggingFace connection and create repos if needed
+ */
+async function testHFConnection() {
+    const hfToken = document.getElementById('hf-token-input').value.trim();
+    const hfRawRepo = document.getElementById('hf-raw-repo-input').value.trim();
+    const hfCleanedRepo = document.getElementById('hf-cleaned-repo-input').value.trim();
+    const hfChunkedRepo = document.getElementById('hf-chunked-repo-input').value.trim();
+    
+    if (!hfToken) {
+        showToast('Error', 'Please enter your HuggingFace token', 'error');
+        return;
+    }
+    
+    if (!hfRawRepo || !hfCleanedRepo || !hfChunkedRepo) {
+        showToast('Error', 'Please enter all three repository names', 'error');
+        return;
+    }
+    
+    showToast('Testing...', 'Checking HuggingFace connection & repos', 'info', 15000);
+    
+    try {
+        const data = await api('/api/admin/test-hf', {
+            method: 'POST',
+            body: JSON.stringify({
+                hf_token: hfToken,
+                raw_repo: hfRawRepo,
+                cleaned_repo: hfCleanedRepo,
+                chunked_repo: hfChunkedRepo
+            })
+        });
+        
+        if (data.success) {
+            const fc = data.file_counts;
+            const repoList = Object.entries(data.repos).map(([type, info]) =>
+                `<li><strong>${type}:</strong> ${info.repo} — <span style="color:var(--success)">✓ ${info.status}</span></li>`
+            ).join('');
+            
+            showModal('HuggingFace Connection OK', `
+                <p>Authenticated as: <strong>${data.user}</strong></p>
+                <p><strong>Repos:</strong></p>
+                <ul style="text-align:left;margin:0.5rem 0;">${repoList}</ul>
+                <p style="margin-top:0.75rem;"><strong>Files ready to push:</strong></p>
+                <ul style="text-align:left;margin:0.5rem 0;">
+                    <li>Raw: ${fc.raw} files</li>
+                    <li>Cleaned: ${fc.cleaned} files</li>
+                    <li>Chunked: ${fc.chunked} files</li>
+                </ul>
+                ${(fc.raw + fc.cleaned + fc.chunked === 0) ? '<p style="color:var(--warning);margin-top:0.5rem;">⚠ No approved files to push yet. Submit data first.</p>' : ''}
+            `, [
+                { text: 'OK', class: 'btn-primary', onClick: hideModal }
+            ]);
+            
+            showToast('Connected!', `Logged in as ${data.user}. All repos ready.`, 'success');
+        } else {
+            // Show repo-level errors
+            if (data.repos) {
+                const errors = Object.entries(data.repos)
+                    .filter(([, info]) => info.status === 'error')
+                    .map(([type, info]) => `${type}: ${info.error}`)
+                    .join('; ');
+                showToast('Repo Error', errors || data.error, 'error', 8000);
+            } else {
+                showToast('Error', data.error || 'Connection test failed', 'error');
+            }
+        }
+    } catch (error) {
+        showToast('Error', `Test failed: ${error.message}`, 'error');
+    }
+}
+
 async function pushToHuggingFace() {
     const hfToken = document.getElementById('hf-token-input').value.trim();
     const hfRawRepo = document.getElementById('hf-raw-repo-input').value.trim();
@@ -823,7 +868,7 @@ async function pushToHuggingFace() {
             hideModal();
             
             // Show progress toast
-            showToast('Uploading...', 'Pushing data to HuggingFace', 'info', 10000);
+            showToast('Uploading...', 'Creating repos & pushing data to HuggingFace', 'info', 30000);
             
             try {
                 const data = await api('/api/admin/push-to-hf', {
@@ -840,6 +885,11 @@ async function pushToHuggingFace() {
                 if (data.success) {
                     const totalUploaded = data.totals.uploaded;
                     const totalFailed = data.totals.failed;
+                    
+                    if (totalUploaded === 0 && totalFailed === 0) {
+                        showToast('No Files', 'No approved files to push. Submit data first, then push.', 'warning');
+                        return;
+                    }
                     
                     showToast(
                         'Push Complete!', 
@@ -863,7 +913,7 @@ async function pushToHuggingFace() {
                         { text: 'OK', class: 'btn-primary', onClick: hideModal }
                     ]);
                 } else {
-                    showToast('Error', data.error || 'Failed to push to HuggingFace', 'error');
+                    showToast('Error', data.error || 'Failed to push to HuggingFace', 'error', 8000);
                 }
                 
             } catch (error) {
@@ -878,9 +928,14 @@ async function pushToHuggingFace() {
  */
 function initHFConfig() {
     const syncBtn = document.getElementById('sync-hf-btn');
+    const testBtn = document.getElementById('test-hf-btn');
     
     if (syncBtn) {
         syncBtn.addEventListener('click', pushToHuggingFace);
+    }
+    
+    if (testBtn) {
+        testBtn.addEventListener('click', testHFConnection);
     }
     
     // Load saved values from localStorage
