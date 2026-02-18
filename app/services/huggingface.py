@@ -65,19 +65,55 @@ class HuggingFaceService:
     def ensure_repo_exists(self, repo_id: str):
         """
         Ensure a dataset repository exists on HuggingFace Hub.
-        Creates it if it doesn't exist.
+        Uses create_repo with exist_ok=True (idempotent).
         
         Args:
             repo_id: The repository ID (e.g., 'Mozhii-AI/RAW')
+        
+        Raises:
+            Exception: If repo creation fails (propagated to caller)
         """
+        import logging
+        logger = logging.getLogger(__name__)
+        
+        logger.info(f'Ensuring repo exists: {repo_id}')
+        
+        # create_repo with exist_ok=True is idempotent — safe to call every time
+        self.api.create_repo(
+            repo_id=repo_id,
+            repo_type='dataset',
+            private=False,
+            exist_ok=True
+        )
+        logger.info(f'Repo confirmed: {repo_id}')
+        
+        # Check if README exists, add one if missing so HF dataset viewer works
         try:
-            self.api.repo_info(repo_id=repo_id, repo_type='dataset')
-        except RepositoryNotFoundError:
-            self.api.create_repo(
-                repo_id=repo_id,
-                repo_type='dataset',
-                private=False
-            )
+            existing_files = self.api.list_repo_files(repo_id=repo_id, repo_type='dataset')
+            if 'README.md' not in existing_files:
+                readme_content = f"""---
+license: apache-2.0
+task_categories:
+  - text-generation
+language:
+  - ta
+pretty_name: {repo_id.split('/')[-1]}
+---
+
+# {repo_id.split('/')[-1]}
+
+Part of the Mozhii RAG Data Platform.
+"""
+                self.api.upload_file(
+                    path_or_fileobj=readme_content.encode('utf-8'),
+                    path_in_repo='README.md',
+                    repo_id=repo_id,
+                    repo_type='dataset',
+                    commit_message='Initialize dataset with README'
+                )
+                logger.info(f'Added README to {repo_id}')
+        except Exception as e:
+            logger.warning(f'Could not add README to {repo_id}: {e}')
     
     # -------------------------------------------------------------------------
     # Upload Operations
@@ -105,12 +141,16 @@ class HuggingFaceService:
         
         target_repo = repo or self.raw_repo
         
+        import logging
+        logger = logging.getLogger(__name__)
+        
         try:
             # Ensure the repository exists
             self.ensure_repo_exists(target_repo)
             
             # Upload only the raw text content file
             content_path = f'{filename}.txt'
+            logger.info(f'Uploading raw file {content_path} to {target_repo}')
             self.api.upload_file(
                 path_or_fileobj=content.encode('utf-8'),
                 path_in_repo=content_path,
@@ -119,26 +159,18 @@ class HuggingFaceService:
                 commit_message=f'Add raw file: {filename}'
             )
             
+            logger.info(f'Successfully uploaded {content_path} to {target_repo}')
             return {
                 'success': True,
                 'message': f'Uploaded {filename} to {target_repo}',
                 'repo': target_repo
             }
             
-        except RepositoryNotFoundError:
-            return {
-                'success': False,
-                'error': f'Repository {target_repo} not found. Please create it first.'
-            }
-        except HfHubHTTPError as e:
-            return {
-                'success': False,
-                'error': f'HuggingFace API error: {str(e)}'
-            }
         except Exception as e:
+            logger.error(f'Failed to upload raw file {filename} to {target_repo}: {type(e).__name__}: {str(e)}')
             return {
                 'success': False,
-                'error': f'Upload failed: {str(e)}'
+                'error': f'Upload failed ({type(e).__name__}): {str(e)}'
             }
     
     def upload_cleaned_file(self, filename: str, content: str, metadata: Dict[str, Any], repo: Optional[str] = None) -> Dict[str, Any]:
