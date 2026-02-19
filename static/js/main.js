@@ -257,6 +257,40 @@ function initAdminSidebar() {
 }
 
 /**
+ * Refresh ALL data after successful HuggingFace push
+ * Clears pending/approved, reloads all tabs, resets admin panel
+ */
+async function refreshAllData() {
+    try {
+        console.log('🔄 Refreshing all application data after HF push...');
+        
+        // Refresh admin panel
+        await refreshAdminData();
+        
+        // Refresh raw data tab (if function exists)
+        if (typeof refreshRawFilesList === 'function') {
+            await refreshRawFilesList();
+        }
+        
+        // Refresh cleaning tab (if functions exist)
+        if (typeof loadCleaningFiles === 'function') {
+            await loadCleaningFiles();
+        }
+        
+        // Refresh chunking tab (if functions exist)
+        if (typeof loadChunkingFiles === 'function') {
+            await loadChunkingFiles();
+        }
+        
+        showToast('Refreshed!', 'All data reloaded from server', 'success', 3000);
+        console.log('✓ All data refreshed successfully');
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+        showToast('Refresh Error', error.message, 'warning');
+    }
+}
+
+/**
  * Refresh admin panel data
  * Fetches all pending items and updates the UI
  */
@@ -885,6 +919,7 @@ async function pushToHuggingFace() {
                 if (data.success) {
                     const totalUploaded = data.totals.uploaded;
                     const totalFailed = data.totals.failed;
+                    const cleanedLocal = data.cleaned_local || false;
                     
                     if (totalUploaded === 0 && totalFailed === 0) {
                         showToast('No Files', 'No approved files to push. Submit data first, then push.', 'warning');
@@ -906,11 +941,18 @@ async function pushToHuggingFace() {
                                 <li>Cleaned: ${data.results.cleaned.uploaded} uploaded, ${data.results.cleaned.failed} failed</li>
                                 <li>Chunks: ${data.results.chunked.uploaded} uploaded, ${data.results.chunked.failed} failed</li>
                             </ul>
+                            ${cleanedLocal ? '<p style="margin-top:0.75rem;color:var(--success);"><strong>✓ Local files cleared</strong></p>' : ''}
                         </div>
                     `;
                     
                     showModal('Upload Complete', resultsHtml, [
-                        { text: 'OK', class: 'btn-primary', onClick: hideModal }
+                        { text: 'OK', class: 'btn-primary', onClick: async () => {
+                            hideModal();
+                            // Refresh all data if push was successful
+                            if (cleanedLocal) {
+                                await refreshAllData();
+                            }
+                        }}
                     ]);
                 } else {
                     showToast('Error', data.error || 'Failed to push to HuggingFace', 'error', 8000);

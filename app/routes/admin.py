@@ -1033,6 +1033,39 @@ def push_to_huggingface():
         total_uploaded = results['raw']['uploaded'] + results['cleaned']['uploaded'] + results['chunked']['uploaded']
         total_failed = results['raw']['failed'] + results['cleaned']['failed'] + results['chunked']['failed']
         
+        # --- Clean up local approved files after successful upload ---
+        if total_uploaded > 0 and total_failed == 0:
+            try:
+                # Remove approved raw files
+                if push_type in ['raw', 'all'] and os.path.exists(Config.APPROVED_RAW_DIR):
+                    for filename in os.listdir(Config.APPROVED_RAW_DIR):
+                        try:
+                            os.remove(os.path.join(Config.APPROVED_RAW_DIR, filename))
+                        except Exception as e:
+                            current_app.logger.warning(f'Failed to delete {filename}: {e}')
+                
+                # Remove approved cleaned files
+                if push_type in ['cleaned', 'all'] and os.path.exists(Config.APPROVED_CLEANED_DIR):
+                    for filename in os.listdir(Config.APPROVED_CLEANED_DIR):
+                        try:
+                            os.remove(os.path.join(Config.APPROVED_CLEANED_DIR, filename))
+                        except Exception as e:
+                            current_app.logger.warning(f'Failed to delete {filename}: {e}')
+                
+                # Remove approved chunked files
+                if push_type in ['chunked', 'all'] and os.path.exists(Config.APPROVED_CHUNKED_DIR):
+                    for folder_name in os.listdir(Config.APPROVED_CHUNKED_DIR):
+                        folder_path = os.path.join(Config.APPROVED_CHUNKED_DIR, folder_name)
+                        if os.path.isdir(folder_path):
+                            try:
+                                shutil.rmtree(folder_path)
+                            except Exception as e:
+                                current_app.logger.warning(f'Failed to delete folder {folder_name}: {e}')
+                
+                current_app.logger.info(f'Cleaned up local approved files after successful HF push')
+            except Exception as cleanup_err:
+                current_app.logger.error(f'Error during cleanup: {cleanup_err}')
+        
         return jsonify({
             'success': True,
             'message': f'Pushed {total_uploaded} files to HuggingFace',
@@ -1040,7 +1073,8 @@ def push_to_huggingface():
             'totals': {
                 'uploaded': total_uploaded,
                 'failed': total_failed
-            }
+            },
+            'cleaned_local': total_uploaded > 0 and total_failed == 0
         })
         
     except Exception as e:
