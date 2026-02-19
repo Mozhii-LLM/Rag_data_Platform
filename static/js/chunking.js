@@ -34,6 +34,7 @@ const ChunkingElements = {
     // Form elements
     chunkText: null,
     chunkHeading: null,
+    chunkSubHeading: null,
     chunkCategory: null,
     chunkSource: null,
     chunkOverlap: null,
@@ -54,6 +55,7 @@ const ChunkingElements = {
         this.chunksList = document.getElementById('chunks-list');
         this.chunkText = document.getElementById('chunk-text');
         this.chunkHeading = document.getElementById('chunk-heading');
+        this.chunkSubHeading = document.getElementById('chunk-sub-heading');
         this.chunkCategory = document.getElementById('chunk-category');
         this.chunkSource = document.getElementById('chunk-source');
         this.chunkOverlap = document.getElementById('chunk-overlap');
@@ -263,6 +265,7 @@ function renderChunksList() {
             </div>
             <div class="chunk-item-meta">
                 ${chunk.heading ? `<span class="chunk-meta-tag">📝 ${chunk.heading}</span>` : ''}
+                ${chunk.sub_heading ? `<span class="chunk-meta-tag">🧷 ${chunk.sub_heading}</span>` : ''}
                 <span class="chunk-meta-tag">📂 ${chunk.category || 'N/A'}</span>
                 <span class="chunk-meta-tag">🔗 ${chunk.source || 'N/A'}</span>
             </div>
@@ -324,6 +327,7 @@ async function removeChunk(chunkIndex) {
 function enableChunkingForm() {
     ChunkingElements.chunkText.disabled = false;
     ChunkingElements.chunkHeading.disabled = false;
+    ChunkingElements.chunkSubHeading.disabled = false;
     ChunkingElements.chunkCategory.disabled = false;
     ChunkingElements.chunkSource.disabled = false;
     ChunkingElements.chunkOverlap.disabled = false;
@@ -337,6 +341,7 @@ function enableChunkingForm() {
 function disableChunkingForm() {
     ChunkingElements.chunkText.disabled = true;
     ChunkingElements.chunkHeading.disabled = true;
+    ChunkingElements.chunkSubHeading.disabled = true;
     ChunkingElements.chunkCategory.disabled = true;
     ChunkingElements.chunkSource.disabled = true;
     ChunkingElements.chunkOverlap.disabled = true;
@@ -359,6 +364,7 @@ function updateChunkCharCount() {
 function clearChunkForm() {
     ChunkingElements.chunkText.value = '';
     ChunkingElements.chunkHeading.value = '';
+    ChunkingElements.chunkSubHeading.value = '';
     ChunkingElements.chunkOverlap.value = '';
     updateChunkCharCount();
 }
@@ -397,6 +403,7 @@ function previewChunk() {
     const preview = {
         chunk_id: chunkId,
         heading: ChunkingElements.chunkHeading.value.trim() || undefined,
+        sub_heading: ChunkingElements.chunkSubHeading.value.trim() || undefined,
         text: ChunkingElements.chunkText.value.trim(),
         language: ChunkingState.selectedFile?.language || 'ta',
         category: ChunkingElements.chunkCategory.value,
@@ -456,6 +463,7 @@ async function handleChunkSubmit() {
             filename: ChunkingState.selectedFilename,
             text: text,
             heading: ChunkingElements.chunkHeading.value.trim() || undefined,
+            sub_heading: ChunkingElements.chunkSubHeading.value.trim() || undefined,
             category: ChunkingElements.chunkCategory.value,
             source: ChunkingElements.chunkSource.value || undefined,
             overlap_reference: ChunkingElements.chunkOverlap.value.trim() || undefined
