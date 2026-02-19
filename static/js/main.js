@@ -929,6 +929,8 @@ async function pushToHuggingFace() {
 function initHFConfig() {
     const syncBtn = document.getElementById('sync-hf-btn');
     const testBtn = document.getElementById('test-hf-btn');
+    const LEGACY_RAW_REPO = 'Mozhii-AI/RAW';
+    const DEFAULT_RAW_REPO = 'Mozhii-AI/Raw_Data';
     
     if (syncBtn) {
         syncBtn.addEventListener('click', pushToHuggingFace);
@@ -948,7 +950,16 @@ function initHFConfig() {
         document.getElementById('hf-token-input').value = savedToken;
     }
     if (savedRawRepo) {
-        document.getElementById('hf-raw-repo-input').value = savedRawRepo;
+        const migratedRawRepo = savedRawRepo === LEGACY_RAW_REPO ? DEFAULT_RAW_REPO : savedRawRepo;
+        document.getElementById('hf-raw-repo-input').value = migratedRawRepo;
+        if (migratedRawRepo !== savedRawRepo) {
+            localStorage.setItem('hf_raw_repo', migratedRawRepo);
+        }
+    } else {
+        const rawRepoInput = document.getElementById('hf-raw-repo-input');
+        if (rawRepoInput && rawRepoInput.value === LEGACY_RAW_REPO) {
+            rawRepoInput.value = DEFAULT_RAW_REPO;
+        }
     }
     if (savedCleanedRepo) {
         document.getElementById('hf-cleaned-repo-input').value = savedCleanedRepo;

@@ -124,20 +124,36 @@ def submit_raw_data():
                 'error': f'File "{filename}" already exists'
             }), 409
         
-        # Save content file
+        # Save content file locally
         with open(content_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
-        # Save metadata file
+        # Save metadata file locally
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
+        
+        # --- Push to HuggingFace immediately ---
+        hf_result = {'success': False, 'error': 'HuggingFace not attempted'}
+        try:
+            from ..services.huggingface import HuggingFaceService
+            hf_service = HuggingFaceService()
+            if hf_service.is_configured():
+                hf_result = hf_service.upload_raw_file(filename, content, metadata)
+                current_app.logger.info(f'HuggingFace upload result: {hf_result}')
+            else:
+                hf_result = {'success': False, 'error': 'HF_TOKEN not configured'}
+                current_app.logger.warning('HuggingFace not configured, skipping upload')
+        except Exception as hf_err:
+            hf_result = {'success': False, 'error': str(hf_err)}
+            current_app.logger.error(f'HuggingFace upload error: {hf_err}')
         
         # Return success response
         return jsonify({
             'success': True,
             'message': 'Raw data submitted and approved successfully.',
             'submission_id': metadata['id'],
-            'filename': filename
+            'filename': filename,
+            'huggingface': hf_result
         })
         
     except Exception as e:

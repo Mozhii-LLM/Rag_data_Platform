@@ -191,12 +191,22 @@ async function handleRawDataSubmit() {
         });
         
         if (response.success) {
-            // Show success message
-            showToast(
-                'Submitted Successfully!', 
-                `"${formData.filename}" has been saved.`,
-                'success'
-            );
+            // Check HuggingFace upload status
+            const hf = response.huggingface;
+            if (hf && hf.success) {
+                showToast(
+                    'Uploaded to HuggingFace!', 
+                    `"${formData.filename}.txt" saved to HuggingFace successfully.`,
+                    'success'
+                );
+            } else {
+                const hfError = hf ? hf.error : 'Unknown error';
+                showToast(
+                    'Saved Locally', 
+                    `"${formData.filename}" saved locally. HuggingFace upload failed: ${hfError}`,
+                    'warning'
+                );
+            }
             
             // Clear the form
             clearRawDataForm();

@@ -51,7 +51,8 @@ class Config:
     
     # Repository names for each data stage
     # Format: username/repo-name or organization/repo-name
-    HF_RAW_REPO = os.getenv('HF_RAW_REPO', 'mozhii/mozhii-raw-data')
+    _raw_repo = os.getenv('HF_RAW_REPO', 'Mozhii-AI/Raw_Data')
+    HF_RAW_REPO = 'Mozhii-AI/Raw_Data' if _raw_repo == 'Mozhii-AI/RAW' else _raw_repo
     HF_CLEANED_REPO = os.getenv('HF_CLEANED_REPO', 'mozhii/mozhii-cleaned-data')
     HF_CHUNKED_REPO = os.getenv('HF_CHUNKED_REPO', 'mozhii/mozhii-chunked-data')
     
