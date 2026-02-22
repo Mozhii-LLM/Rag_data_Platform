@@ -19,9 +19,13 @@ HuggingFace Repositories:
 
 import os
 import json
+import time
+import logging
 from typing import Optional, List, Dict, Any
-from huggingface_hub import HfApi, upload_file, hf_hub_download
+from huggingface_hub import HfApi, hf_hub_download, CommitOperationAdd
 from huggingface_hub.utils import RepositoryNotFoundError, HfHubHTTPError
+
+logger = logging.getLogger(__name__)
 
 
 class HuggingFaceService:
@@ -62,72 +66,18 @@ class HuggingFaceService:
         """
         return bool(self.token and self.api)
     
-    def ensure_repo_exists(self, repo_id: str):
-        """
-        Ensure a dataset repository exists on HuggingFace Hub.
-        Uses create_repo with exist_ok=True (idempotent).
-        
-        Args:
-            repo_id: The repository ID (e.g., 'Mozhii-AI/RAW')
-        
-        Raises:
-            Exception: If repo creation fails (propagated to caller)
-        """
-        import logging
-        logger = logging.getLogger(__name__)
-        
-        logger.info(f'Ensuring repo exists: {repo_id}')
-        
-        # create_repo with exist_ok=True is idempotent — safe to call every time
-        self.api.create_repo(
-            repo_id=repo_id,
-            repo_type='dataset',
-            private=False,
-            exist_ok=True
-        )
-        logger.info(f'Repo confirmed: {repo_id}')
-        
-        # Check if README exists, add one if missing so HF dataset viewer works
-        try:
-            existing_files = self.api.list_repo_files(repo_id=repo_id, repo_type='dataset')
-            if 'README.md' not in existing_files:
-                readme_content = f"""---
-license: apache-2.0
-task_categories:
-  - text-generation
-language:
-  - ta
-pretty_name: {repo_id.split('/')[-1]}
----
-
-# {repo_id.split('/')[-1]}
-
-Part of the Mozhii RAG Data Platform.
-"""
-                self.api.upload_file(
-                    path_or_fileobj=readme_content.encode('utf-8'),
-                    path_in_repo='README.md',
-                    repo_id=repo_id,
-                    repo_type='dataset',
-                    commit_message='Initialize dataset with README'
-                )
-                logger.info(f'Added README to {repo_id}')
-        except Exception as e:
-            logger.warning(f'Could not add README to {repo_id}: {e}')
-    
     # -------------------------------------------------------------------------
     # Upload Operations
     # -------------------------------------------------------------------------
     
     def upload_raw_file(self, filename: str, content: str, metadata: Dict[str, Any], repo: Optional[str] = None) -> Dict[str, Any]:
         """
-        Upload a raw data file to the raw data repository.
-        Only uploads the .txt content file (no metadata).
+        Upload a raw data file to mozhii-raw-data repository.
         
         Args:
             filename: Name of the file (without extension)
             content: The raw text content
-            metadata: File metadata dictionary (not uploaded)
+            metadata: File metadata dictionary
             repo: Optional custom repository name (overrides default)
         
         Returns:
@@ -140,48 +90,56 @@ Part of the Mozhii RAG Data Platform.
             }
         
         target_repo = repo or self.raw_repo
-        
-        import logging
-        logger = logging.getLogger(__name__)
-        
+
         try:
-            # Ensure the repository exists
-            self.ensure_repo_exists(target_repo)
-            
-            # Upload only the raw text content file
-            content_path = f'{filename}.txt'
-            logger.info(f'Uploading raw file {content_path} to {target_repo}')
-            self.api.upload_file(
-                path_or_fileobj=content.encode('utf-8'),
-                path_in_repo=content_path,
+            # Upload content + metadata in ONE commit (avoids double rate-limit hit)
+            operations = [
+                CommitOperationAdd(
+                    path_in_repo=f'{filename}.txt',
+                    path_or_fileobj=content.encode('utf-8'),
+                ),
+                CommitOperationAdd(
+                    path_in_repo=f'{filename}.meta.json',
+                    path_or_fileobj=json.dumps(metadata, indent=2, ensure_ascii=False).encode('utf-8'),
+                ),
+            ]
+            self.api.create_commit(
                 repo_id=target_repo,
                 repo_type='dataset',
-                commit_message=f'Add raw file: {filename}'
+                operations=operations,
+                commit_message=f'Add raw file: {filename}',
             )
-            
-            logger.info(f'Successfully uploaded {content_path} to {target_repo}')
+
             return {
                 'success': True,
                 'message': f'Uploaded {filename} to {target_repo}',
-                'repo': target_repo
+                'repo': target_repo,
             }
-            
-        except Exception as e:
-            logger.error(f'Failed to upload raw file {filename} to {target_repo}: {type(e).__name__}: {str(e)}')
+
+        except RepositoryNotFoundError:
             return {
                 'success': False,
-                'error': f'Upload failed ({type(e).__name__}): {str(e)}'
+                'error': f'Repository {target_repo} not found. Please create it first.',
+            }
+        except HfHubHTTPError as e:
+            return {
+                'success': False,
+                'error': f'HuggingFace API error: {str(e)}',
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'error': f'Upload failed: {str(e)}',
             }
     
     def upload_cleaned_file(self, filename: str, content: str, metadata: Dict[str, Any], repo: Optional[str] = None) -> Dict[str, Any]:
         """
-        Upload a cleaned data file to the cleaned data repository.
-        Only uploads the .txt content file (no metadata).
+        Upload a cleaned data file to mozhii-cleaned-data repository.
         
         Args:
             filename: Name of the file
             content: The cleaned text content
-            metadata: File metadata dictionary (not uploaded)
+            metadata: File metadata dictionary
             repo: Optional custom repository name (overrides default)
         
         Returns:
@@ -194,136 +152,169 @@ Part of the Mozhii RAG Data Platform.
             }
         
         target_repo = repo or self.cleaned_repo
-        
+
         try:
-            # Ensure the repository exists
-            self.ensure_repo_exists(target_repo)
-            
-            # Upload only the cleaned text content file
-            self.api.upload_file(
-                path_or_fileobj=content.encode('utf-8'),
-                path_in_repo=f'{filename}.txt',
+            operations = [
+                CommitOperationAdd(
+                    path_in_repo=f'{filename}.txt',
+                    path_or_fileobj=content.encode('utf-8'),
+                ),
+                # NOTE: meta.json intentionally NOT pushed to cleaned repo
+                #       — only the plain text file is uploaded.
+            ]
+            self.api.create_commit(
                 repo_id=target_repo,
                 repo_type='dataset',
-                commit_message=f'Add cleaned file: {filename}'
+                operations=operations,
+                commit_message=f'Add cleaned file: {filename}',
             )
-            
+
             return {
                 'success': True,
                 'message': f'Uploaded {filename} to {target_repo}',
-                'repo': target_repo
+                'repo': target_repo,
             }
-            
+
         except Exception as e:
             return {
                 'success': False,
-                'error': f'Upload failed: {str(e)}'
+                'error': f'Upload failed: {str(e)}',
             }
     
     def upload_chunk(self, folder_name: str, chunk_file: str, chunk_data: Dict[str, Any], repo: Optional[str] = None) -> Dict[str, Any]:
         """
         Upload a single chunk to mozhii-chunked-data repository.
-        
-        Args:
-            folder_name: Name of the folder (source file name)
-            chunk_file: Chunk filename (e.g., chunk_01.json)
-            chunk_data: Chunk data dictionary
-            repo: Optional custom repository name (overrides default)
-        
-        Returns:
-            dict: Result with success status and message
+        Uses create_commit for atomicity and to avoid rate-limit issues.
         """
         if not self.is_configured():
-            return {
-                'success': False,
-                'error': 'HuggingFace not configured'
-            }
-        
+            return {'success': False, 'error': 'HuggingFace not configured'}
+
         target_repo = repo or self.chunked_repo
-        
+
         try:
-            # Ensure the repository exists
-            self.ensure_repo_exists(target_repo)
-            
             chunk_filename = f'{folder_name}/{chunk_file}'
-            chunk_content = json.dumps(chunk_data, indent=2, ensure_ascii=False)
-            
-            self.api.upload_file(
-                path_or_fileobj=chunk_content.encode('utf-8'),
-                path_in_repo=chunk_filename,
+            chunk_content = json.dumps(chunk_data, indent=2, ensure_ascii=False).encode('utf-8')
+
+            self.api.create_commit(
                 repo_id=target_repo,
                 repo_type='dataset',
-                commit_message=f'Add {chunk_file} for {folder_name}'
+                operations=[CommitOperationAdd(path_in_repo=chunk_filename, path_or_fileobj=chunk_content)],
+                commit_message=f'Add {chunk_file} for {folder_name}',
             )
-            
+
             return {
                 'success': True,
                 'message': f'Uploaded {chunk_file} to {target_repo}',
-                'repo': target_repo
+                'repo': target_repo,
             }
-            
+
         except Exception as e:
-            return {
-                'success': False,
-                'error': f'Upload failed: {str(e)}'
-            }
-    
-    def upload_chunks(self, folder_name: str, chunks: List[Dict[str, Any]], repo: Optional[str] = None) -> Dict[str, Any]:
+            return {'success': False, 'error': f'Upload failed: {str(e)}'}
+
+    def upload_chunks_batch(
+        self,
+        folder_name: str,
+        chunks: List[Dict[str, Any]],
+        repo: Optional[str] = None,
+        batch_size: int = 50,
+    ) -> Dict[str, Any]:
         """
-        Upload chunks to mozhii-chunked-data repository.
-        
-        Chunks are organized in folders named after the source file.
-        Each chunk is saved as a separate JSON file.
-        
+        Upload many chunks in batched create_commit calls.
+
+        Instead of one API call per chunk (which triggers HuggingFace rate
+        limits for large sets like 223 chunks), we group chunks into batches
+        and push each batch as a SINGLE commit.  This is drastically faster
+        and avoids rate-limiting / timeout failures.
+
         Args:
             folder_name: Name of the folder (source file name)
-            chunks: List of chunk dictionaries
-            repo: Optional custom repository name (overrides default)
-        
+            chunks: List of chunk dicts to upload
+            repo: Optional custom repository name
+            batch_size: How many chunks per commit (default 50)
+
         Returns:
-            dict: Result with success status and message
+            dict with success status, uploaded count, and per-chunk errors
         """
         if not self.is_configured():
-            return {
-                'success': False,
-                'error': 'HuggingFace not configured'
-            }
-        
+            return {'success': False, 'error': 'HuggingFace not configured'}
+
         target_repo = repo or self.chunked_repo
-        
-        try:
-            # Ensure the repository exists
-            self.ensure_repo_exists(target_repo)
-            
-            uploaded_count = 0
-            
-            for chunk in chunks:
+        uploaded_count = 0
+        failed_chunks: List[str] = []
+        MAX_RETRIES = 3
+
+        # Split into batches
+        for batch_start in range(0, len(chunks), batch_size):
+            batch = chunks[batch_start: batch_start + batch_size]
+            operations = []
+
+            for chunk in batch:
                 chunk_index = chunk.get('chunk_index', 1)
                 chunk_filename = f'{folder_name}/chunk_{chunk_index:02d}.json'
-                chunk_content = json.dumps(chunk, indent=2, ensure_ascii=False)
-                
-                self.api.upload_file(
-                    path_or_fileobj=chunk_content.encode('utf-8'),
-                    path_in_repo=chunk_filename,
-                    repo_id=target_repo,
-                    repo_type='dataset',
-                    commit_message=f'Add chunk {chunk_index} for {folder_name}'
+                chunk_content = json.dumps(chunk, indent=2, ensure_ascii=False).encode('utf-8')
+                operations.append(
+                    CommitOperationAdd(path_in_repo=chunk_filename, path_or_fileobj=chunk_content)
                 )
-                uploaded_count += 1
-            
-            return {
-                'success': True,
-                'message': f'Uploaded {uploaded_count} chunks to {target_repo}',
-                'repo': target_repo,
-                'count': uploaded_count
-            }
-            
-        except Exception as e:
-            return {
-                'success': False,
-                'error': f'Upload failed: {str(e)}'
-            }
-    
+
+            # Retry the whole batch up to MAX_RETRIES times
+            for attempt in range(1, MAX_RETRIES + 1):
+                try:
+                    self.api.create_commit(
+                        repo_id=target_repo,
+                        repo_type='dataset',
+                        operations=operations,
+                        commit_message=(
+                            f'Add chunks {batch_start + 1}-{batch_start + len(batch)} for {folder_name}'
+                        ),
+                    )
+                    uploaded_count += len(batch)
+                    break  # success — move to next batch
+                except HfHubHTTPError as e:
+                    status = getattr(e, 'response', None)
+                    status_code = status.status_code if status is not None else 0
+                    if status_code == 429 or attempt < MAX_RETRIES:
+                        wait = 2 ** attempt  # exponential back-off: 2s, 4s, 8s
+                        logger.warning(
+                            'HF rate-limit / transient error on batch %d-%d (attempt %d/%d). '
+                            'Retrying in %ds. Error: %s',
+                            batch_start + 1, batch_start + len(batch), attempt, MAX_RETRIES, wait, e,
+                        )
+                        time.sleep(wait)
+                    else:
+                        # Final attempt failed — record failed chunk IDs
+                        for chunk in batch:
+                            failed_chunks.append(
+                                f'{folder_name}/chunk_{chunk.get("chunk_index", "?"):02d}.json'
+                            )
+                        logger.error('Batch upload permanently failed: %s', e)
+                        break
+                except Exception as e:
+                    if attempt < MAX_RETRIES:
+                        time.sleep(2 ** attempt)
+                    else:
+                        for chunk in batch:
+                            failed_chunks.append(
+                                f'{folder_name}/chunk_{chunk.get("chunk_index", "?"):02d}.json'
+                            )
+                        logger.error('Batch upload error: %s', e)
+                        break
+
+        success = len(failed_chunks) == 0
+        return {
+            'success': success,
+            'message': f'Uploaded {uploaded_count} chunks ({len(failed_chunks)} failed) to {target_repo}',
+            'repo': target_repo,
+            'uploaded_count': uploaded_count,
+            'failed_count': len(failed_chunks),
+            'failed_chunks': failed_chunks,
+        }
+
+    def upload_chunks(self, folder_name: str, chunks: List[Dict[str, Any]], repo: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Legacy wrapper — delegates to upload_chunks_batch for reliability.
+        """
+        return self.upload_chunks_batch(folder_name, chunks, repo=repo)
+
     # -------------------------------------------------------------------------
     # Download Operations
     # -------------------------------------------------------------------------

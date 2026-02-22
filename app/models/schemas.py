@@ -170,8 +170,6 @@ class ChunkSchema:
     Attributes:
         chunk_id: Unique chunk identifier (formatted)
         text: The chunk text content
-        heading: Optional heading/title
-        sub_heading: Optional sub heading
         language: Language code
         category: Content category
         source: Source type
@@ -190,8 +188,6 @@ class ChunkSchema:
     category: str
     language: str = field(default='ta')
     source: str = field(default='unknown')
-    heading: str = field(default='')
-    sub_heading: str = field(default='')
     chunk_id: str = field(default='')
     overlap_reference: str = field(default='')
     text_length: int = field(default=0)

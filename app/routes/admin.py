@@ -19,6 +19,8 @@ Endpoints:
     POST /api/admin/reject           - Reject a submission
     POST /api/admin/push-to-hf       - Push approved data to HuggingFace
     GET  /api/admin/stats            - Get platform statistics
+    GET  /api/admin/approved-files   - List approved files with push status
+    DELETE /api/admin/delete-approved - Delete approved file(s) by stage
 =============================================================================
 """
 
@@ -789,297 +791,404 @@ def get_stats():
         }), 500
 
 # -----------------------------------------------------------------------------
-# POST /api/admin/test-hf - Test HuggingFace Connection
+# GET /api/admin/approved-files - List all approved files with push status
 # -----------------------------------------------------------------------------
-@admin_bp.route('/test-hf', methods=['POST'])
-def test_hf_connection():
+@admin_bp.route('/approved-files', methods=['GET'])
+def list_approved_files():
     """
-    Test HuggingFace connection, token validity, and create repos if needed.
-    
-    Expected JSON body:
-    {
-        "hf_token": "hf_...",
-        "raw_repo": "Org/RepoName",
-        "cleaned_repo": "Org/RepoName",
-        "chunked_repo": "Org/RepoName"
-    }
+    List every approved file (raw, cleaned, chunks) and whether it has
+    already been pushed to HuggingFace.  Used by the admin panel to render
+    per-file Push buttons.
     """
     try:
-        data = request.get_json()
-        hf_token = data.get('hf_token') or os.getenv('HF_TOKEN')
-        
-        if not hf_token:
-            return jsonify({
-                'success': False,
-                'error': 'HuggingFace token is required'
-            }), 400
-        
-        from ..services.huggingface import HuggingFaceService
         from ..config import Config
-        
-        hf_service = HuggingFaceService(token=hf_token)
-        
-        # Test 1: Verify token by getting user info
-        try:
-            user_info = hf_service.api.whoami()
-            username = user_info.get('name', 'unknown')
-        except Exception as e:
-            return jsonify({
-                'success': False,
-                'error': f'Invalid token or connection error: {str(e)}'
-            }), 400
-        
-        # Test 2: Try to create/verify each repo
-        repos = {
-            'raw': data.get('raw_repo') or Config.HF_RAW_REPO,
-            'cleaned': data.get('cleaned_repo') or Config.HF_CLEANED_REPO,
-            'chunked': data.get('chunked_repo') or Config.HF_CHUNKED_REPO
-        }
-        
-        repo_status = {}
-        for repo_type, repo_id in repos.items():
-            try:
-                hf_service.ensure_repo_exists(repo_id)
-                repo_status[repo_type] = {'repo': repo_id, 'status': 'ready'}
-            except Exception as e:
-                repo_status[repo_type] = {'repo': repo_id, 'status': 'error', 'error': str(e)}
-        
-        # Count local approved files
-        file_counts = {
-            'raw': len([f for f in os.listdir(Config.APPROVED_RAW_DIR) if f.endswith('.txt')]) if os.path.exists(Config.APPROVED_RAW_DIR) else 0,
-            'cleaned': len([f for f in os.listdir(Config.APPROVED_CLEANED_DIR) if f.endswith('.txt')]) if os.path.exists(Config.APPROVED_CLEANED_DIR) else 0,
-            'chunked': sum(
-                len([f for f in os.listdir(os.path.join(Config.APPROVED_CHUNKED_DIR, d)) if f.endswith('.json')])
-                for d in os.listdir(Config.APPROVED_CHUNKED_DIR)
-                if os.path.isdir(os.path.join(Config.APPROVED_CHUNKED_DIR, d))
-            ) if os.path.exists(Config.APPROVED_CHUNKED_DIR) else 0
-        }
-        
-        all_repos_ok = all(r['status'] == 'ready' for r in repo_status.values())
-        
+
+        files = {}  # keyed by base_name
+
+        # ── approved raw ──────────────────────────────────────────────────
+        if os.path.exists(Config.APPROVED_RAW_DIR):
+            for fname in os.listdir(Config.APPROVED_RAW_DIR):
+                if not fname.endswith('.txt'):
+                    continue
+                base = fname.replace('.txt', '')
+                meta_path = os.path.join(Config.APPROVED_RAW_DIR, f'{base}.meta.json')
+                pushed = False
+                if os.path.exists(meta_path):
+                    with open(meta_path, 'r', encoding='utf-8') as f:
+                        pushed = bool(json.load(f).get('pushed_to_hf'))
+                entry = files.setdefault(base, {'filename': base, 'raw': False, 'cleaned': False, 'chunks': 0, 'chunks_pushed': 0})
+                entry['raw'] = True
+                entry['raw_pushed'] = pushed
+
+        # ── approved cleaned ──────────────────────────────────────────────
+        if os.path.exists(Config.APPROVED_CLEANED_DIR):
+            for fname in os.listdir(Config.APPROVED_CLEANED_DIR):
+                if not fname.endswith('.txt'):
+                    continue
+                base = fname.replace('.txt', '')
+                meta_path = os.path.join(Config.APPROVED_CLEANED_DIR, f'{base}.meta.json')
+                pushed = False
+                if os.path.exists(meta_path):
+                    with open(meta_path, 'r', encoding='utf-8') as f:
+                        pushed = bool(json.load(f).get('pushed_to_hf'))
+                entry = files.setdefault(base, {'filename': base, 'raw': False, 'raw_pushed': False, 'cleaned': False, 'chunks': 0, 'chunks_pushed': 0})
+                entry['cleaned'] = True
+                entry['cleaned_pushed'] = pushed
+
+        # ── approved chunks ───────────────────────────────────────────────
+        if os.path.exists(Config.APPROVED_CHUNKED_DIR):
+            for folder in os.listdir(Config.APPROVED_CHUNKED_DIR):
+                folder_path = os.path.join(Config.APPROVED_CHUNKED_DIR, folder)
+                if not os.path.isdir(folder_path):
+                    continue
+                total = 0
+                pushed_count = 0
+                for cf in os.listdir(folder_path):
+                    if not cf.endswith('.json'):
+                        continue
+                    total += 1
+                    chunk_path = os.path.join(folder_path, cf)
+                    try:
+                        with open(chunk_path, 'r', encoding='utf-8') as f:
+                            if json.load(f).get('pushed_to_hf'):
+                                pushed_count += 1
+                    except Exception:
+                        pass
+                entry = files.setdefault(folder, {'filename': folder, 'raw': False, 'raw_pushed': False, 'cleaned': False, 'cleaned_pushed': False})
+                entry['chunks'] = total
+                entry['chunks_pushed'] = pushed_count
+
         return jsonify({
-            'success': all_repos_ok,
-            'user': username,
-            'repos': repo_status,
-            'file_counts': file_counts,
-            'message': 'All repos ready!' if all_repos_ok else 'Some repos had errors'
+            'success': True,
+            'files': sorted(files.values(), key=lambda x: x['filename']),
+            'count': len(files),
         })
-        
+
     except Exception as e:
-        current_app.logger.error(f'HF test error: {str(e)}')
-        return jsonify({
-            'success': False,
-            'error': f'Test failed: {str(e)}'
-        }), 500
+        current_app.logger.error('Error listing approved files: %s', str(e))
+        return jsonify({'success': False, 'error': 'Failed to list approved files'}), 500
 
 
-# -----------------------------------------------------------------------------
 # POST /api/admin/push-to-hf - Push Approved Data to HuggingFace
 # -----------------------------------------------------------------------------
 @admin_bp.route('/push-to-hf', methods=['POST'])
 def push_to_huggingface():
     """
     Push approved data to HuggingFace repositories.
-    
+
+    KEY IMPROVEMENTS over the old version:
+      - Chunks are uploaded in BATCHES via create_commit() instead of one
+        API call per chunk.  This eliminates HF rate-limiting failures for
+        large chunk sets (e.g. 223 chunks).
+      - Already-pushed chunks are SKIPPED — each chunk JSON gets a
+        'pushed_to_hf' timestamp after a successful push so re-running
+        push never re-uploads what's already there.
+      - Per-folder retry with exponential back-off built into the service.
+      - Detailed per-folder results returned so the UI can show exactly
+        what succeeded / failed.
+
     Expected JSON body:
     {
         "type": "raw" | "cleaned" | "chunked" | "all",
-        "hf_token": "hf_...",  // HuggingFace token
-        "repo": "username/repo-name"  // Target repo
+        "hf_token": "hf_...",
+        "raw_repo": "org/repo",
+        "cleaned_repo": "org/repo",
+        "chunked_repo": "org/repo",
+        "filename": "grade_10_science"   // OPTIONAL — push only this one file.
+                                          // If omitted, all un-pushed files are pushed.
     }
-    
-    Returns:
-        JSON: Upload results with count of files pushed
     """
     try:
         data = request.get_json()
-        
+
         if not data or 'type' not in data:
-            return jsonify({
-                'success': False,
-                'error': 'Missing type'
-            }), 400
-        
-        # Get HuggingFace config
+            return jsonify({'success': False, 'error': 'Missing type'}), 400
+
         hf_token = data.get('hf_token') or os.getenv('HF_TOKEN')
         if not hf_token:
             return jsonify({
                 'success': False,
-                'error': 'HuggingFace token required. Set HF_TOKEN in .env or provide in request.'
+                'error': 'HuggingFace token required. Set HF_TOKEN env var or provide hf_token in request.',
             }), 400
-        
+
         push_type = data['type']
-        
+        # Optional per-file filter — when set, ONLY this file is pushed.
+        target_filename = data.get('filename', '').strip() or None
+
         from ..services.huggingface import HuggingFaceService
         from ..config import Config
-        
-        # Initialize HF service with token
+
         hf_service = HuggingFaceService(token=hf_token)
-        
         if not hf_service.is_configured():
-            return jsonify({
-                'success': False,
-                'error': 'HuggingFace service not configured properly'
-            }), 400
-        
-        # Ensure all target repos exist before uploading
-        raw_repo = data.get('raw_repo') or data.get('repo') or Config.HF_RAW_REPO
-        cleaned_repo = data.get('cleaned_repo') or data.get('repo') or Config.HF_CLEANED_REPO
-        chunked_repo = data.get('chunked_repo') or data.get('repo') or Config.HF_CHUNKED_REPO
-        
-        repo_errors = []
-        for repo_name, repo_id in [('raw', raw_repo), ('cleaned', cleaned_repo), ('chunked', chunked_repo)]:
-            try:
-                hf_service.ensure_repo_exists(repo_id)
-            except Exception as e:
-                repo_errors.append(f'{repo_name} ({repo_id}): {str(e)}')
-        
-        if repo_errors:
-            return jsonify({
-                'success': False,
-                'error': 'Failed to create/access repos: ' + '; '.join(repo_errors)
-            }), 400
-        
+            return jsonify({'success': False, 'error': 'HuggingFace service not configured properly'}), 400
+
         results = {
-            'raw': {'uploaded': 0, 'failed': 0, 'files': []},
-            'cleaned': {'uploaded': 0, 'failed': 0, 'files': []},
-            'chunked': {'uploaded': 0, 'failed': 0, 'files': []}
+            'raw':     {'uploaded': 0, 'failed': 0, 'skipped': 0, 'files': []},
+            'cleaned': {'uploaded': 0, 'failed': 0, 'skipped': 0, 'files': []},
+            'chunked': {'uploaded': 0, 'failed': 0, 'skipped': 0, 'files': [], 'failed_chunks': []},
         }
-        
+
+        # ------------------------------------------------------------------
         # Push raw files
+        # ------------------------------------------------------------------
         if push_type in ['raw', 'all']:
-            repo = raw_repo
+            repo = data.get('raw_repo') or Config.HF_RAW_REPO
             if os.path.exists(Config.APPROVED_RAW_DIR):
                 for filename in os.listdir(Config.APPROVED_RAW_DIR):
-                    if filename.endswith('.txt'):
-                        base_name = filename.replace('.txt', '')
-                        content_path = os.path.join(Config.APPROVED_RAW_DIR, filename)
-                        meta_path = os.path.join(Config.APPROVED_RAW_DIR, f'{base_name}.meta.json')
-                        
-                        try:
-                            with open(content_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
+                    if not filename.endswith('.txt'):
+                        continue
+                    base_name = filename.replace('.txt', '')
+                    # ── Per-file filter ───────────────────────────────────
+                    if target_filename and base_name != target_filename:
+                        continue
+                    content_path = os.path.join(Config.APPROVED_RAW_DIR, filename)
+                    meta_path = os.path.join(Config.APPROVED_RAW_DIR, f'{base_name}.meta.json')
+
+                    try:
+                        with open(content_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        metadata = {}
+                        if os.path.exists(meta_path):
                             with open(meta_path, 'r', encoding='utf-8') as f:
                                 metadata = json.load(f)
-                            
-                            result = hf_service.upload_raw_file(base_name, content, metadata, repo)
-                            
-                            if result['success']:
-                                results['raw']['uploaded'] += 1
-                                results['raw']['files'].append(base_name)
-                            else:
-                                results['raw']['failed'] += 1
-                                
-                        except Exception as e:
-                            current_app.logger.error(f'Failed to upload {base_name}: {str(e)}')
+
+                        # Skip already-pushed
+                        if metadata.get('pushed_to_hf'):
+                            results['raw']['skipped'] += 1
+                            continue
+
+                        result = hf_service.upload_raw_file(base_name, content, metadata, repo)
+                        if result['success']:
+                            results['raw']['uploaded'] += 1
+                            results['raw']['files'].append(base_name)
+                            # Mark as pushed
+                            metadata['pushed_to_hf'] = datetime.utcnow().isoformat() + 'Z'
+                            with open(meta_path, 'w', encoding='utf-8') as f:
+                                json.dump(metadata, f, indent=2, ensure_ascii=False)
+                        else:
                             results['raw']['failed'] += 1
-        
+                            current_app.logger.error('Raw upload failed for %s: %s', base_name, result.get('error'))
+                    except Exception as e:
+                        current_app.logger.error('Exception uploading raw %s: %s', base_name, str(e))
+                        results['raw']['failed'] += 1
+
+        # ------------------------------------------------------------------
         # Push cleaned files
+        # ------------------------------------------------------------------
         if push_type in ['cleaned', 'all']:
-            repo = cleaned_repo
+            repo = data.get('cleaned_repo') or Config.HF_CLEANED_REPO
             if os.path.exists(Config.APPROVED_CLEANED_DIR):
                 for filename in os.listdir(Config.APPROVED_CLEANED_DIR):
-                    if filename.endswith('.txt'):
-                        base_name = filename.replace('.txt', '')
-                        content_path = os.path.join(Config.APPROVED_CLEANED_DIR, filename)
-                        meta_path = os.path.join(Config.APPROVED_CLEANED_DIR, f'{base_name}.meta.json')
-                        
-                        try:
-                            with open(content_path, 'r', encoding='utf-8') as f:
-                                content = f.read()
+                    if not filename.endswith('.txt'):
+                        continue
+                    base_name = filename.replace('.txt', '')
+                    # ── Per-file filter ───────────────────────────────────
+                    if target_filename and base_name != target_filename:
+                        continue
+                    content_path = os.path.join(Config.APPROVED_CLEANED_DIR, filename)
+                    meta_path = os.path.join(Config.APPROVED_CLEANED_DIR, f'{base_name}.meta.json')
+
+                    try:
+                        with open(content_path, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                        metadata = {}
+                        if os.path.exists(meta_path):
                             with open(meta_path, 'r', encoding='utf-8') as f:
                                 metadata = json.load(f)
-                            
-                            result = hf_service.upload_cleaned_file(base_name, content, metadata, repo)
-                            
-                            if result['success']:
-                                results['cleaned']['uploaded'] += 1
-                                results['cleaned']['files'].append(base_name)
-                            else:
-                                results['cleaned']['failed'] += 1
-                                
-                        except Exception as e:
-                            current_app.logger.error(f'Failed to upload {base_name}: {str(e)}')
+
+                        if metadata.get('pushed_to_hf'):
+                            results['cleaned']['skipped'] += 1
+                            continue
+
+                        result = hf_service.upload_cleaned_file(base_name, content, metadata, repo)
+                        if result['success']:
+                            results['cleaned']['uploaded'] += 1
+                            results['cleaned']['files'].append(base_name)
+                            metadata['pushed_to_hf'] = datetime.utcnow().isoformat() + 'Z'
+                            with open(meta_path, 'w', encoding='utf-8') as f:
+                                json.dump(metadata, f, indent=2, ensure_ascii=False)
+                        else:
                             results['cleaned']['failed'] += 1
-        
-        # Push chunks
+                            current_app.logger.error('Cleaned upload failed for %s: %s', base_name, result.get('error'))
+                    except Exception as e:
+                        current_app.logger.error('Exception uploading cleaned %s: %s', base_name, str(e))
+                        results['cleaned']['failed'] += 1
+
+        # ------------------------------------------------------------------
+        # Push chunks  — BATCHED per folder (NEW: avoids rate-limiting)
+        # ------------------------------------------------------------------
         if push_type in ['chunked', 'all']:
-            repo = chunked_repo
+            repo = data.get('chunked_repo') or Config.HF_CHUNKED_REPO
             if os.path.exists(Config.APPROVED_CHUNKED_DIR):
-                for folder_name in os.listdir(Config.APPROVED_CHUNKED_DIR):
+                for folder_name in sorted(os.listdir(Config.APPROVED_CHUNKED_DIR)):
                     folder_path = os.path.join(Config.APPROVED_CHUNKED_DIR, folder_name)
-                    if os.path.isdir(folder_path):
-                        for chunk_file in os.listdir(folder_path):
-                            if chunk_file.endswith('.json'):
-                                chunk_path = os.path.join(folder_path, chunk_file)
-                                
+                    if not os.path.isdir(folder_path):
+                        continue
+                    # ── Per-file filter ───────────────────────────────────
+                    if target_filename and folder_name != target_filename:
+                        continue
+
+                    # Collect only chunks that haven't been pushed yet
+                    unpushed_chunks = []
+                    chunk_file_paths = {}   # chunk_index -> file path (for marking after push)
+
+                    for chunk_file in sorted(os.listdir(folder_path)):
+                        if not chunk_file.endswith('.json'):
+                            continue
+                        chunk_path = os.path.join(folder_path, chunk_file)
+                        try:
+                            with open(chunk_path, 'r', encoding='utf-8') as f:
+                                chunk_data = json.load(f)
+
+                            if chunk_data.get('pushed_to_hf'):
+                                results['chunked']['skipped'] += 1
+                                continue
+
+                            unpushed_chunks.append(chunk_data)
+                            chunk_file_paths[chunk_data.get('chunk_index', chunk_file)] = chunk_path
+                        except Exception as e:
+                            current_app.logger.error('Error reading chunk %s: %s', chunk_path, str(e))
+                            results['chunked']['failed'] += 1
+
+                    if not unpushed_chunks:
+                        continue
+
+                    # Upload the whole folder's unpushed chunks in one batched request
+                    result = hf_service.upload_chunks_batch(folder_name, unpushed_chunks, repo=repo)
+
+                    results['chunked']['uploaded'] += result.get('uploaded_count', 0)
+                    results['chunked']['failed']   += result.get('failed_count', 0)
+                    if result.get('failed_chunks'):
+                        results['chunked']['failed_chunks'].extend(result['failed_chunks'])
+
+                    if result.get('uploaded_count', 0) > 0:
+                        results['chunked']['files'].append(
+                            f"{folder_name} ({result['uploaded_count']} chunks)"
+                        )
+
+                    # Mark successfully-pushed chunks in their JSON files
+                    failed_set = set(result.get('failed_chunks', []))
+                    pushed_at = datetime.utcnow().isoformat() + 'Z'
+                    for chunk_data in unpushed_chunks:
+                        chunk_index = chunk_data.get('chunk_index')
+                        chunk_key_name = f'{folder_name}/chunk_{chunk_index:02d}.json'
+                        if chunk_key_name not in failed_set:
+                            chunk_path = chunk_file_paths.get(chunk_index)
+                            if chunk_path and os.path.exists(chunk_path):
                                 try:
-                                    with open(chunk_path, 'r', encoding='utf-8') as f:
-                                        chunk_data = json.load(f)
-                                    
-                                    result = hf_service.upload_chunk(folder_name, chunk_file, chunk_data, repo)
-                                    
-                                    if result['success']:
-                                        results['chunked']['uploaded'] += 1
-                                        results['chunked']['files'].append(f'{folder_name}/{chunk_file}')
-                                    else:
-                                        results['chunked']['failed'] += 1
-                                        
+                                    chunk_data['pushed_to_hf'] = pushed_at
+                                    with open(chunk_path, 'w', encoding='utf-8') as f:
+                                        json.dump(chunk_data, f, indent=2, ensure_ascii=False)
                                 except Exception as e:
-                                    current_app.logger.error(f'Failed to upload chunk {chunk_file}: {str(e)}')
-                                    results['chunked']['failed'] += 1
-        
-        # Calculate totals
-        total_uploaded = results['raw']['uploaded'] + results['cleaned']['uploaded'] + results['chunked']['uploaded']
-        total_failed = results['raw']['failed'] + results['cleaned']['failed'] + results['chunked']['failed']
-        
-        # --- Clean up local approved files after successful upload ---
-        if total_uploaded > 0 and total_failed == 0:
-            try:
-                # Remove approved raw files
-                if push_type in ['raw', 'all'] and os.path.exists(Config.APPROVED_RAW_DIR):
-                    for filename in os.listdir(Config.APPROVED_RAW_DIR):
-                        try:
-                            os.remove(os.path.join(Config.APPROVED_RAW_DIR, filename))
-                        except Exception as e:
-                            current_app.logger.warning(f'Failed to delete {filename}: {e}')
-                
-                # Remove approved cleaned files
-                if push_type in ['cleaned', 'all'] and os.path.exists(Config.APPROVED_CLEANED_DIR):
-                    for filename in os.listdir(Config.APPROVED_CLEANED_DIR):
-                        try:
-                            os.remove(os.path.join(Config.APPROVED_CLEANED_DIR, filename))
-                        except Exception as e:
-                            current_app.logger.warning(f'Failed to delete {filename}: {e}')
-                
-                # Remove approved chunked files
-                if push_type in ['chunked', 'all'] and os.path.exists(Config.APPROVED_CHUNKED_DIR):
-                    for folder_name in os.listdir(Config.APPROVED_CHUNKED_DIR):
-                        folder_path = os.path.join(Config.APPROVED_CHUNKED_DIR, folder_name)
-                        if os.path.isdir(folder_path):
-                            try:
-                                shutil.rmtree(folder_path)
-                            except Exception as e:
-                                current_app.logger.warning(f'Failed to delete folder {folder_name}: {e}')
-                
-                current_app.logger.info(f'Cleaned up local approved files after successful HF push')
-            except Exception as cleanup_err:
-                current_app.logger.error(f'Error during cleanup: {cleanup_err}')
-        
+                                    current_app.logger.warning('Could not mark chunk as pushed: %s', str(e))
+
+        # ------------------------------------------------------------------
+        # Summary
+        # ------------------------------------------------------------------
+        total_uploaded = (results['raw']['uploaded'] +
+                          results['cleaned']['uploaded'] +
+                          results['chunked']['uploaded'])
+        total_failed = (results['raw']['failed'] +
+                        results['cleaned']['failed'] +
+                        results['chunked']['failed'])
+        total_skipped = (results['raw']['skipped'] +
+                         results['cleaned']['skipped'] +
+                         results['chunked']['skipped'])
+
         return jsonify({
             'success': True,
-            'message': f'Pushed {total_uploaded} files to HuggingFace',
+            'message': (
+                f'Pushed {total_uploaded} items to HuggingFace'
+                + (f', {total_failed} failed' if total_failed else '')
+                + (f', {total_skipped} already pushed (skipped)' if total_skipped else '')
+            ),
             'results': results,
             'totals': {
                 'uploaded': total_uploaded,
-                'failed': total_failed
+                'failed': total_failed,
+                'skipped': total_skipped,
             },
-            'cleaned_local': total_uploaded > 0 and total_failed == 0
         })
-        
+
     except Exception as e:
-        current_app.logger.error(f'Error pushing to HuggingFace: {str(e)}')
+        current_app.logger.error('Error pushing to HuggingFace: %s', str(e))
         return jsonify({
             'success': False,
-            'error': f'Failed to push to HuggingFace: {str(e)}'
+            'error': f'Failed to push to HuggingFace: {str(e)}',
         }), 500
+
+
+# -----------------------------------------------------------------------------
+# DELETE /api/admin/delete-approved  - Delete approved file(s) by stage
+# -----------------------------------------------------------------------------
+@admin_bp.route('/delete-approved', methods=['DELETE'])
+def delete_approved():
+    """
+    Delete one or more stages of an approved file.
+
+    Expected JSON body:
+    {
+        "filename": "grade_10_science",
+        "type": "raw" | "cleaned" | "chunks" | "all"
+    }
+    """
+    try:
+        from ..config import Config
+
+        data = request.get_json() or {}
+        filename = (data.get('filename') or '').strip()
+        delete_type = (data.get('type') or 'all').strip().lower()
+
+        if not filename:
+            return jsonify({'success': False, 'error': 'filename is required'}), 400
+
+        deleted = []
+
+        def _remove_raw():
+            raw_content = os.path.join(Config.APPROVED_RAW_DIR, f'{filename}.txt')
+            raw_meta    = os.path.join(Config.APPROVED_RAW_DIR, f'{filename}.meta.json')
+            removed = False
+            for p in (raw_content, raw_meta):
+                if os.path.exists(p):
+                    os.remove(p)
+                    removed = True
+            if removed:
+                deleted.append('raw')
+
+        def _remove_cleaned():
+            cln_content = os.path.join(Config.APPROVED_CLEANED_DIR, f'{filename}.txt')
+            cln_meta    = os.path.join(Config.APPROVED_CLEANED_DIR, f'{filename}.meta.json')
+            removed = False
+            for p in (cln_content, cln_meta):
+                if os.path.exists(p):
+                    os.remove(p)
+                    removed = True
+            if removed:
+                deleted.append('cleaned')
+
+        def _remove_chunks():
+            chunks_dir = os.path.join(Config.APPROVED_CHUNKED_DIR, filename)
+            if os.path.exists(chunks_dir) and os.path.isdir(chunks_dir):
+                shutil.rmtree(chunks_dir)
+                deleted.append('chunks')
+
+        if delete_type in ('raw', 'all'):
+            _remove_raw()
+        if delete_type in ('cleaned', 'all'):
+            _remove_cleaned()
+        if delete_type in ('chunks', 'all'):
+            _remove_chunks()
+
+        if not deleted:
+            return jsonify({'success': False, 'error': f'Nothing found to delete for "{filename}" ({delete_type})'}), 404
+
+        current_app.logger.info('Deleted approved %s for %s', deleted, filename)
+        return jsonify({
+            'success': True,
+            'message': f'Deleted {", ".join(deleted)} for "{filename}"',
+            'deleted': deleted,
+        })
+
+    except Exception as e:
+        current_app.logger.error('Error deleting approved file: %s', str(e))
+        return jsonify({'success': False, 'error': f'Delete failed: {str(e)}'}), 500

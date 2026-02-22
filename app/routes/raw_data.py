@@ -53,7 +53,7 @@ def generate_metadata(filename, language, source, content):
         'source': source,                             # Source type
         'content_length': len(content),               # Character count
         'submitted_at': datetime.now().isoformat(),   # Submission timestamp
-        'status': 'approved',                         # Auto-approved
+        'status': 'pending',                          # Approval status
         'submitted_by': 'collector'                   # Role (for audit)
     }
 
@@ -109,51 +109,35 @@ def submit_raw_data():
         # Generate metadata
         metadata = generate_metadata(filename, language, source, content)
         
-        # Get approved directory path from config
+        # Get pending directory path from config
         from ..config import Config
-        approved_dir = Config.APPROVED_RAW_DIR
+        pending_dir = Config.PENDING_RAW_DIR
         
         # Create file paths
-        content_path = os.path.join(approved_dir, f'{filename}.txt')
-        metadata_path = os.path.join(approved_dir, f'{filename}.meta.json')
+        content_path = os.path.join(pending_dir, f'{filename}.txt')
+        metadata_path = os.path.join(pending_dir, f'{filename}.meta.json')
         
         # Check if file already exists
         if os.path.exists(content_path):
             return jsonify({
                 'success': False,
-                'error': f'File "{filename}" already exists'
+                'error': f'File "{filename}" already exists in pending queue'
             }), 409
         
-        # Save content file locally
+        # Save content file
         with open(content_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
-        # Save metadata file locally
+        # Save metadata file
         with open(metadata_path, 'w', encoding='utf-8') as f:
             json.dump(metadata, f, indent=2, ensure_ascii=False)
-        
-        # --- Push to HuggingFace immediately ---
-        hf_result = {'success': False, 'error': 'HuggingFace not attempted'}
-        try:
-            from ..services.huggingface import HuggingFaceService
-            hf_service = HuggingFaceService()
-            if hf_service.is_configured():
-                hf_result = hf_service.upload_raw_file(filename, content, metadata)
-                current_app.logger.info(f'HuggingFace upload result: {hf_result}')
-            else:
-                hf_result = {'success': False, 'error': 'HF_TOKEN not configured'}
-                current_app.logger.warning('HuggingFace not configured, skipping upload')
-        except Exception as hf_err:
-            hf_result = {'success': False, 'error': str(hf_err)}
-            current_app.logger.error(f'HuggingFace upload error: {hf_err}')
         
         # Return success response
         return jsonify({
             'success': True,
-            'message': 'Raw data submitted and approved successfully.',
+            'message': 'Raw data submitted successfully. Awaiting admin approval.',
             'submission_id': metadata['id'],
-            'filename': filename,
-            'huggingface': hf_result
+            'filename': filename
         })
         
     except Exception as e:
@@ -317,114 +301,4 @@ def get_file_content(filename):
         return jsonify({
             'success': False,
             'error': 'Failed to read file'
-        }), 500
-
-
-# -----------------------------------------------------------------------------
-# DELETE /api/raw/file/<filename> - Delete an Approved Raw File
-# -----------------------------------------------------------------------------
-@raw_data_bp.route('/file/<filename>', methods=['DELETE'])
-def delete_raw_file(filename):
-    """
-    Delete an approved raw data file.
-    
-    Args:
-        filename: Name of the file (without .txt extension)
-    
-    Returns:
-        JSON: Success/error response
-    """
-    try:
-        from ..config import Config
-        
-        content_path = os.path.join(Config.APPROVED_RAW_DIR, f'{filename}.txt')
-        meta_path = os.path.join(Config.APPROVED_RAW_DIR, f'{filename}.meta.json')
-        
-        if not os.path.exists(content_path):
-            return jsonify({
-                'success': False,
-                'error': f'File "{filename}" not found'
-            }), 404
-        
-        if os.path.exists(content_path):
-            os.remove(content_path)
-        if os.path.exists(meta_path):
-            os.remove(meta_path)
-        
-        return jsonify({
-            'success': True,
-            'message': f'File "{filename}" deleted successfully'
-        })
-        
-    except Exception as e:
-        current_app.logger.error(f'Error deleting raw file: {str(e)}')
-        return jsonify({
-            'success': False,
-            'error': 'Failed to delete file'
-        }), 500
-
-
-# -----------------------------------------------------------------------------
-# PUT /api/raw/file/<filename> - Update an Approved Raw File
-# -----------------------------------------------------------------------------
-@raw_data_bp.route('/file/<filename>', methods=['PUT'])
-def update_raw_file(filename):
-    """
-    Update content of an approved raw data file.
-    
-    Expected JSON body:
-    {
-        "content": "Updated Tamil text content..."
-    }
-    
-    Args:
-        filename: Name of the file (without .txt extension)
-    
-    Returns:
-        JSON: Success/error response
-    """
-    try:
-        from ..config import Config
-        
-        data = request.get_json()
-        content = data.get('content', '').strip()
-        
-        if not content:
-            return jsonify({
-                'success': False,
-                'error': 'Content is required'
-            }), 400
-        
-        content_path = os.path.join(Config.APPROVED_RAW_DIR, f'{filename}.txt')
-        meta_path = os.path.join(Config.APPROVED_RAW_DIR, f'{filename}.meta.json')
-        
-        if not os.path.exists(content_path):
-            return jsonify({
-                'success': False,
-                'error': f'File "{filename}" not found'
-            }), 404
-        
-        # Update content
-        with open(content_path, 'w', encoding='utf-8') as f:
-            f.write(content)
-        
-        # Update metadata
-        if os.path.exists(meta_path):
-            with open(meta_path, 'r', encoding='utf-8') as f:
-                metadata = json.load(f)
-            metadata['content_length'] = len(content)
-            metadata['updated_at'] = datetime.now().isoformat()
-            with open(meta_path, 'w', encoding='utf-8') as f:
-                json.dump(metadata, f, indent=2, ensure_ascii=False)
-        
-        return jsonify({
-            'success': True,
-            'message': f'File "{filename}" updated successfully'
-        })
-        
-    except Exception as e:
-        current_app.logger.error(f'Error updating raw file: {str(e)}')
-        return jsonify({
-            'success': False,
-            'error': 'Failed to update file'
         }), 500

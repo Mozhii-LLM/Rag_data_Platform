@@ -244,6 +244,7 @@ function initAdminSidebar() {
         sidebar.classList.add('open');
         overlay.classList.add('visible');
         refreshAdminData();
+        loadApprovedFiles();   // refresh per-file push status
     });
     
     // Close sidebar
@@ -253,40 +254,6 @@ function initAdminSidebar() {
     function closeSidebar() {
         sidebar.classList.remove('open');
         overlay.classList.remove('visible');
-    }
-}
-
-/**
- * Refresh ALL data after successful HuggingFace push
- * Clears pending/approved, reloads all tabs, resets admin panel
- */
-async function refreshAllData() {
-    try {
-        console.log('🔄 Refreshing all application data after HF push...');
-        
-        // Refresh admin panel
-        await refreshAdminData();
-        
-        // Refresh raw data tab (if function exists)
-        if (typeof refreshRawFilesList === 'function') {
-            await refreshRawFilesList();
-        }
-        
-        // Refresh cleaning tab (if functions exist)
-        if (typeof loadCleaningFiles === 'function') {
-            await loadCleaningFiles();
-        }
-        
-        // Refresh chunking tab (if functions exist)
-        if (typeof loadChunkingFiles === 'function') {
-            await loadChunkingFiles();
-        }
-        
-        showToast('Refreshed!', 'All data reloaded from server', 'success', 3000);
-        console.log('✓ All data refreshed successfully');
-    } catch (error) {
-        console.error('Error refreshing data:', error);
-        showToast('Refresh Error', error.message, 'warning');
     }
 }
 
@@ -693,27 +660,18 @@ async function saveHFConfig() {
 }
 
 /**
- * Initialize HuggingFace configuration handlers
+ * Push approved data to HuggingFace (legacy stub — real function is below)
+ */
+async function pushToHuggingFace() {
+    // Delegated to the full implementation below.
+    _pushToHuggingFace_full();
+}
+
+/**
+ * Initialize HuggingFace configuration handlers (first pass — overridden below)
  */
 function initHFConfig() {
-    const sectionHeader = document.getElementById('hf-section-header');
-    const saveBtn = document.getElementById('save-hf-config');
-    const syncBtn = document.getElementById('sync-hf-btn');
-    
-    if (sectionHeader) {
-        sectionHeader.addEventListener('click', toggleHFConfig);
-    }
-    
-    if (saveBtn) {
-        saveBtn.addEventListener('click', saveHFConfig);
-    }
-    
-    if (syncBtn) {
-        syncBtn.addEventListener('click', pushToHuggingFace);
-    }
-    
-    // Load initial config
-    loadHFConfig();
+    // The second definition below is the active one — kept for hoisting safety.
 }
 
 // =============================================================================
@@ -799,169 +757,261 @@ async function editItem(type, filename) {
 // =============================================================================
 
 /**
- * Push approved data to HuggingFace
+ * Collect HF credentials from the input fields.
+ * Returns null and shows an appropriate error toast if anything is missing.
  */
-/**
- * Test HuggingFace connection and create repos if needed
- */
-async function testHFConnection() {
-    const hfToken = document.getElementById('hf-token-input').value.trim();
-    const hfRawRepo = document.getElementById('hf-raw-repo-input').value.trim();
+function _getHFCredentials() {
+    const hfToken       = document.getElementById('hf-token-input').value.trim();
+    const hfRawRepo     = document.getElementById('hf-raw-repo-input').value.trim();
     const hfCleanedRepo = document.getElementById('hf-cleaned-repo-input').value.trim();
     const hfChunkedRepo = document.getElementById('hf-chunked-repo-input').value.trim();
-    
+
     if (!hfToken) {
         showToast('Error', 'Please enter your HuggingFace token', 'error');
-        return;
+        return null;
     }
-    
     if (!hfRawRepo || !hfCleanedRepo || !hfChunkedRepo) {
         showToast('Error', 'Please enter all three repository names', 'error');
-        return;
+        return null;
     }
-    
-    showToast('Testing...', 'Checking HuggingFace connection & repos', 'info', 15000);
-    
+    return { hfToken, hfRawRepo, hfCleanedRepo, hfChunkedRepo };
+}
+
+/**
+ * Show the push-complete result modal with uploaded / skipped / failed counts.
+ */
+function _showPushResultModal(title, data) {
+    const { results, totals } = data;
+    const failedChunks = results.chunked.failed_chunks || [];
+    const html = `
+        <div class="push-results">
+            <p><strong>Upload Results:</strong></p>
+            <ul style="text-align:left;margin:0.5rem 0;">
+                <li>Raw: ${results.raw.uploaded} uploaded, ${results.raw.skipped||0} skipped, ${results.raw.failed} failed</li>
+                <li>Cleaned: ${results.cleaned.uploaded} uploaded, ${results.cleaned.skipped||0} skipped, ${results.cleaned.failed} failed</li>
+                <li>Chunks: ${results.chunked.uploaded} uploaded, ${results.chunked.skipped||0} skipped, ${results.chunked.failed} failed</li>
+            </ul>
+            ${failedChunks.length > 0 ? `
+            <p style="color:#c0392b;margin-top:0.5rem;"><strong>Failed chunks (push again to retry):</strong></p>
+            <ul style="text-align:left;font-size:0.8rem;color:#c0392b;max-height:120px;overflow-y:auto;">
+                ${failedChunks.map(c => `<li>${c}</li>`).join('')}
+            </ul>
+            <p style="font-size:0.8rem;color:#888;">Already-pushed chunks are skipped automatically — just click Push again.</p>
+            ` : ''}
+        </div>`;
+    showModal(title, html, [{ text: 'OK', class: 'btn-primary', onClick: hideModal }]);
+}
+
+// -----------------------------------------------------------------------------
+// Per-file push
+// -----------------------------------------------------------------------------
+
+/**
+ * Load and render the list of approved files in the admin panel.
+ * Each file gets its own "🚀 Push" button scoped to only that file.
+ */
+async function loadApprovedFiles() {
+    const listEl = document.getElementById('approved-files-list');
+    if (!listEl) return;
+
+    listEl.innerHTML = '<div style="padding:0.6rem;text-align:center;font-size:0.8rem;color:var(--text-secondary);">Loading…</div>';
+
     try {
-        const data = await api('/api/admin/test-hf', {
-            method: 'POST',
-            body: JSON.stringify({
-                hf_token: hfToken,
-                raw_repo: hfRawRepo,
-                cleaned_repo: hfCleanedRepo,
-                chunked_repo: hfChunkedRepo
-            })
-        });
-        
-        if (data.success) {
-            const fc = data.file_counts;
-            const repoList = Object.entries(data.repos).map(([type, info]) =>
-                `<li><strong>${type}:</strong> ${info.repo} — <span style="color:var(--success)">✓ ${info.status}</span></li>`
-            ).join('');
-            
-            showModal('HuggingFace Connection OK', `
-                <p>Authenticated as: <strong>${data.user}</strong></p>
-                <p><strong>Repos:</strong></p>
-                <ul style="text-align:left;margin:0.5rem 0;">${repoList}</ul>
-                <p style="margin-top:0.75rem;"><strong>Files ready to push:</strong></p>
-                <ul style="text-align:left;margin:0.5rem 0;">
-                    <li>Raw: ${fc.raw} files</li>
-                    <li>Cleaned: ${fc.cleaned} files</li>
-                    <li>Chunked: ${fc.chunked} files</li>
-                </ul>
-                ${(fc.raw + fc.cleaned + fc.chunked === 0) ? '<p style="color:var(--warning);margin-top:0.5rem;">⚠ No approved files to push yet. Submit data first.</p>' : ''}
-            `, [
-                { text: 'OK', class: 'btn-primary', onClick: hideModal }
-            ]);
-            
-            showToast('Connected!', `Logged in as ${data.user}. All repos ready.`, 'success');
-        } else {
-            // Show repo-level errors
-            if (data.repos) {
-                const errors = Object.entries(data.repos)
-                    .filter(([, info]) => info.status === 'error')
-                    .map(([type, info]) => `${type}: ${info.error}`)
-                    .join('; ');
-                showToast('Repo Error', errors || data.error, 'error', 8000);
-            } else {
-                showToast('Error', data.error || 'Connection test failed', 'error');
-            }
+        const data = await api('/api/admin/approved-files');
+        if (!data.success || data.files.length === 0) {
+            listEl.innerHTML = '<div style="padding:0.6rem;text-align:center;font-size:0.8rem;color:var(--text-secondary);">No approved files yet</div>';
+            return;
         }
+
+        listEl.innerHTML = data.files.map(file => {
+            const hasSomething = file.raw || file.cleaned || (file.chunks > 0);
+            if (!hasSomething) return '';
+
+            const allPushed = (file.raw ? file.raw_pushed : true)
+                           && (file.cleaned ? file.cleaned_pushed : true)
+                           && (file.chunks === 0 || file.chunks_pushed === file.chunks);
+
+            // Build per-stage badges WITH inline delete buttons
+            const stageBadges = [];
+            const delBtn = (type, label) =>
+                `<button onclick="deleteApproved('${file.filename}','${type}')" 
+                    title="Delete ${label} for ${file.filename}"
+                    style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:0.7rem;color:#c0392b;line-height:1;">🗑</button>`;
+
+            if (file.raw)
+                stageBadges.push(`<span>${file.raw_pushed ? '📥✓' : '📥'}${delBtn('raw','raw')}</span>`);
+            if (file.cleaned)
+                stageBadges.push(`<span>${file.cleaned_pushed ? '🧹✓' : '🧹'}${delBtn('cleaned','cleaned')}</span>`);
+            if (file.chunks > 0)
+                stageBadges.push(`<span>🧩 ${file.chunks_pushed}/${file.chunks}${delBtn('chunks','chunks')}</span>`);
+
+            const statusBadge = allPushed
+                ? '<span style="color:#27ae60;font-size:0.7rem;">✓ Done</span>'
+                : '<span style="color:#e67e22;font-size:0.7rem;">⬆ Ready</span>';
+
+            const pushEl = allPushed
+                ? '<span style="font-size:0.72rem;color:#27ae60;padding:0.25rem 0.5rem;flex-shrink:0;">Done ✓</span>'
+                : `<button class="btn btn-primary" onclick="pushSingleFile('${file.filename}')"
+                        style="padding:0.25rem 0.55rem;font-size:0.75rem;white-space:nowrap;flex-shrink:0;"
+                        title="Push only ${file.filename} to HuggingFace">🚀 Push</button>`;
+
+            // Delete-all button (small red, shown always)
+            const delAllBtn = `<button onclick="deleteApproved('${file.filename}','all')"
+                title="Delete ALL stages for ${file.filename}"
+                style="background:none;border:1px solid #c0392b;border-radius:4px;cursor:pointer;padding:0.15rem 0.35rem;font-size:0.7rem;color:#c0392b;flex-shrink:0;white-space:nowrap;">🗑 All</button>`;
+
+            return `
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;padding:0.4rem 0.5rem;border-bottom:1px solid var(--border);gap:0.4rem;"
+                 data-filename="${file.filename}">
+                <div style="min-width:0;flex:1;overflow:hidden;">
+                    <div style="font-size:0.8rem;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${file.filename}">${file.filename}</div>
+                    <div style="font-size:0.7rem;color:var(--text-secondary);display:flex;flex-wrap:wrap;gap:0.35rem;align-items:center;margin-top:2px;">
+                        ${stageBadges.join('<span style="color:var(--border);">·</span>')}
+                        &nbsp;${statusBadge}
+                    </div>
+                </div>
+                <div style="display:flex;flex-direction:column;align-items:flex-end;gap:0.25rem;flex-shrink:0;">
+                    ${pushEl}
+                    ${delAllBtn}
+                </div>
+            </div>`;
+        }).join('');
     } catch (error) {
-        showToast('Error', `Test failed: ${error.message}`, 'error');
+        listEl.innerHTML = `<div style="padding:0.6rem;text-align:center;font-size:0.8rem;color:#c0392b;">Error: ${error.message}</div>`;
     }
 }
 
-async function pushToHuggingFace() {
-    const hfToken = document.getElementById('hf-token-input').value.trim();
-    const hfRawRepo = document.getElementById('hf-raw-repo-input').value.trim();
-    const hfCleanedRepo = document.getElementById('hf-cleaned-repo-input').value.trim();
-    const hfChunkedRepo = document.getElementById('hf-chunked-repo-input').value.trim();
-    
-    if (!hfToken) {
-        showToast('Error', 'Please enter your HuggingFace token', 'error');
-        return;
+/**
+ * Push ONE specific file (raw + cleaned + chunks) to HuggingFace.
+ * Called by each per-file Push button.
+ *
+ * @param {string} filename - The base filename to push (e.g. 'grade_10_science')
+ */
+async function pushSingleFile(filename) {
+    const creds = _getHFCredentials();
+    if (!creds) return;
+
+    // Disable this file's button while pushing
+    const row = document.querySelector(`[data-filename="${filename}"]`);
+    const btn = row ? row.querySelector('button') : null;
+    if (btn) { btn.disabled = true; btn.textContent = '⏳…'; }
+
+    showToast('Uploading…', `Pushing "${filename}" to HuggingFace`, 'info', 20000);
+
+    try {
+        const data = await api('/api/admin/push-to-hf', {
+            method: 'POST',
+            body: JSON.stringify({
+                type: 'all',
+                hf_token: creds.hfToken,
+                raw_repo: creds.hfRawRepo,
+                cleaned_repo: creds.hfCleanedRepo,
+                chunked_repo: creds.hfChunkedRepo,
+                filename: filename,          // ← only this file is pushed
+            }),
+        });
+
+        if (data.success) {
+            const { uploaded, failed, skipped } = data.totals;
+            showToast(
+                failed > 0 ? '⚠️ Partial Push' : '✅ Pushed!',
+                `${filename}: ${uploaded} uploaded${skipped > 0 ? `, ${skipped} already done` : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
+                failed > 0 ? 'warning' : 'success',
+            );
+            if (failed > 0) {
+                _showPushResultModal(`Push Results: ${filename}`, data);
+            }
+            // Refresh the list so the button updates to "Done ✓"
+            loadApprovedFiles();
+        } else {
+            showToast('Error', data.error || 'Push failed', 'error');
+            if (btn) { btn.disabled = false; btn.textContent = '🚀 Push'; }
+        }
+    } catch (error) {
+        showToast('Error', `Push failed: ${error.message}`, 'error');
+        if (btn) { btn.disabled = false; btn.textContent = '🚀 Push'; }
     }
-    
-    if (!hfRawRepo || !hfCleanedRepo || !hfChunkedRepo) {
-        showToast('Error', 'Please enter all three repository names', 'error');
-        return;
+}
+
+/**
+ * Delete one stage (or all stages) of an approved file.
+ * Called by the 🗑 buttons in the approved-files list.
+ *
+ * @param {string} filename  - base filename  (e.g. 'grade_10_science')
+ * @param {string} type      - 'raw' | 'cleaned' | 'chunks' | 'all'
+ */
+async function deleteApproved(filename, type) {
+    const label = type === 'all' ? `ALL stages of "${filename}"` : `${type} data for "${filename}"`;
+    if (!confirm(`Delete ${label}?\n\nThis cannot be undone.`)) return;
+
+    showToast('Deleting…', label, 'info', 8000);
+    try {
+        const data = await api('/api/admin/delete-approved', {
+            method: 'DELETE',
+            body: JSON.stringify({ filename, type }),
+        });
+        if (data.success) {
+            showToast('🗑 Deleted', data.message, 'success');
+            loadApprovedFiles();
+        } else {
+            showToast('Error', data.error || 'Delete failed', 'error');
+        }
+    } catch (err) {
+        showToast('Error', `Delete failed: ${err.message}`, 'error');
     }
-    
-    // Confirm before pushing
-    showModal('Push to HuggingFace', `
-        <p>Ready to push approved data to:</p>
+}
+
+// -----------------------------------------------------------------------------
+// Global "Push All" (admin bulk action)
+// -----------------------------------------------------------------------------
+
+async function _pushToHuggingFace_full() {
+    const creds = _getHFCredentials();
+    if (!creds) return;
+
+    showModal('Push ALL to HuggingFace', `
+        <p>This will push <strong>every un-pushed approved file</strong> to:</p>
         <ul style="text-align:left;margin:0.5rem 0;">
-            <li><strong>Raw:</strong> ${hfRawRepo}</li>
-            <li><strong>Cleaned:</strong> ${hfCleanedRepo}</li>
-            <li><strong>Chunked:</strong> ${hfChunkedRepo}</li>
+            <li><strong>Raw:</strong> ${creds.hfRawRepo}</li>
+            <li><strong>Cleaned:</strong> ${creds.hfCleanedRepo}</li>
+            <li><strong>Chunked:</strong> ${creds.hfChunkedRepo}</li>
         </ul>
+        <p style="font-size:0.85rem;color:var(--text-secondary);">To push only your file, use the individual Push buttons above.</p>
     `, [
         { text: 'Cancel', class: 'btn-secondary', onClick: hideModal },
-        { text: 'Push', class: 'btn-primary', onClick: async () => {
+        { text: 'Push All', class: 'btn-primary', onClick: async () => {
             hideModal();
-            
-            // Show progress toast
-            showToast('Uploading...', 'Creating repos & pushing data to HuggingFace', 'info', 30000);
-            
+            showToast('Uploading…', 'Pushing all files to HuggingFace', 'info', 30000);
+
             try {
                 const data = await api('/api/admin/push-to-hf', {
                     method: 'POST',
                     body: JSON.stringify({
                         type: 'all',
-                        hf_token: hfToken,
-                        raw_repo: hfRawRepo,
-                        cleaned_repo: hfCleanedRepo,
-                        chunked_repo: hfChunkedRepo
-                    })
+                        hf_token: creds.hfToken,
+                        raw_repo: creds.hfRawRepo,
+                        cleaned_repo: creds.hfCleanedRepo,
+                        chunked_repo: creds.hfChunkedRepo,
+                        // no filename → push everything
+                    }),
                 });
-                
+
                 if (data.success) {
-                    const totalUploaded = data.totals.uploaded;
-                    const totalFailed = data.totals.failed;
-                    const cleanedLocal = data.cleaned_local || false;
-                    
-                    if (totalUploaded === 0 && totalFailed === 0) {
-                        showToast('No Files', 'No approved files to push. Submit data first, then push.', 'warning');
-                        return;
-                    }
-                    
+                    const { uploaded, failed, skipped } = data.totals;
                     showToast(
-                        'Push Complete!', 
-                        `Uploaded ${totalUploaded} files${totalFailed > 0 ? `, ${totalFailed} failed` : ''}`,
-                        totalFailed > 0 ? 'warning' : 'success'
+                        failed > 0 ? '⚠️ Partial Push' : '✅ Push Complete!',
+                        `${uploaded} uploaded${skipped > 0 ? `, ${skipped} skipped` : ''}${failed > 0 ? `, ${failed} failed` : ''}`,
+                        failed > 0 ? 'warning' : 'success',
                     );
-                    
-                    // Show detailed results
-                    const resultsHtml = `
-                        <div class="push-results">
-                            <p><strong>Upload Results:</strong></p>
-                            <ul>
-                                <li>Raw: ${data.results.raw.uploaded} uploaded, ${data.results.raw.failed} failed</li>
-                                <li>Cleaned: ${data.results.cleaned.uploaded} uploaded, ${data.results.cleaned.failed} failed</li>
-                                <li>Chunks: ${data.results.chunked.uploaded} uploaded, ${data.results.chunked.failed} failed</li>
-                            </ul>
-                            ${cleanedLocal ? '<p style="margin-top:0.75rem;color:var(--success);"><strong>✓ Local files cleared</strong></p>' : ''}
-                        </div>
-                    `;
-                    
-                    showModal('Upload Complete', resultsHtml, [
-                        { text: 'OK', class: 'btn-primary', onClick: async () => {
-                            hideModal();
-                            // Refresh all data if push was successful
-                            if (cleanedLocal) {
-                                await refreshAllData();
-                            }
-                        }}
-                    ]);
+                    _showPushResultModal('Push All — Results', data);
+                    loadApprovedFiles();
                 } else {
-                    showToast('Error', data.error || 'Failed to push to HuggingFace', 'error', 8000);
+                    showToast('Error', data.error || 'Push failed', 'error');
                 }
-                
             } catch (error) {
-                showToast('Error', `Failed to push: ${error.message}`, 'error');
+                showToast('Error', `Push failed: ${error.message}`, 'error');
             }
-        }}
+        }},
     ]);
 }
 
@@ -970,59 +1020,34 @@ async function pushToHuggingFace() {
  */
 function initHFConfig() {
     const syncBtn = document.getElementById('sync-hf-btn');
-    const testBtn = document.getElementById('test-hf-btn');
-    const LEGACY_RAW_REPO = 'Mozhii-AI/RAW';
-    const DEFAULT_RAW_REPO = 'Mozhii-AI/Raw_Data';
-    
+    const refreshBtn = document.getElementById('refresh-approved-btn');
+
     if (syncBtn) {
         syncBtn.addEventListener('click', pushToHuggingFace);
     }
-    
-    if (testBtn) {
-        testBtn.addEventListener('click', testHFConnection);
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', loadApprovedFiles);
     }
-    
-    // Load saved values from localStorage
-    const savedToken = localStorage.getItem('hf_token');
-    const savedRawRepo = localStorage.getItem('hf_raw_repo');
-    const savedCleanedRepo = localStorage.getItem('hf_cleaned_repo');
-    const savedChunkedRepo = localStorage.getItem('hf_chunked_repo');
-    
-    if (savedToken) {
-        document.getElementById('hf-token-input').value = savedToken;
-    }
-    if (savedRawRepo) {
-        const migratedRawRepo = savedRawRepo === LEGACY_RAW_REPO ? DEFAULT_RAW_REPO : savedRawRepo;
-        document.getElementById('hf-raw-repo-input').value = migratedRawRepo;
-        if (migratedRawRepo !== savedRawRepo) {
-            localStorage.setItem('hf_raw_repo', migratedRawRepo);
-        }
-    } else {
-        const rawRepoInput = document.getElementById('hf-raw-repo-input');
-        if (rawRepoInput && rawRepoInput.value === LEGACY_RAW_REPO) {
-            rawRepoInput.value = DEFAULT_RAW_REPO;
-        }
-    }
-    if (savedCleanedRepo) {
-        document.getElementById('hf-cleaned-repo-input').value = savedCleanedRepo;
-    }
-    if (savedChunkedRepo) {
-        document.getElementById('hf-chunked-repo-input').value = savedChunkedRepo;
-    }
-    
-    // Save values to localStorage on change
-    document.getElementById('hf-token-input').addEventListener('change', (e) => {
-        localStorage.setItem('hf_token', e.target.value);
-    });
-    document.getElementById('hf-raw-repo-input').addEventListener('change', (e) => {
-        localStorage.setItem('hf_raw_repo', e.target.value);
-    });
-    document.getElementById('hf-cleaned-repo-input').addEventListener('change', (e) => {
-        localStorage.setItem('hf_cleaned_repo', e.target.value);
-    });
-    document.getElementById('hf-chunked-repo-input').addEventListener('change', (e) => {
-        localStorage.setItem('hf_chunked_repo', e.target.value);
-    });
+
+    // ── Restore saved values from localStorage (fall back to org defaults) ─
+    const savedToken       = localStorage.getItem('hf_token');
+    const savedRawRepo     = localStorage.getItem('hf_raw_repo')     || 'Mozhii-AI/Raw_Data';
+    const savedCleanedRepo = localStorage.getItem('hf_cleaned_repo') || 'Mozhii-AI/Cleaned';
+    const savedChunkedRepo = localStorage.getItem('hf_chunked_repo') || 'Mozhii-AI/Chunk';
+
+    if (savedToken)       document.getElementById('hf-token-input').value       = savedToken;
+    document.getElementById('hf-raw-repo-input').value     = savedRawRepo;
+    document.getElementById('hf-cleaned-repo-input').value = savedCleanedRepo;
+    document.getElementById('hf-chunked-repo-input').value = savedChunkedRepo;
+
+    // ── Persist changes ───────────────────────────────────────────────────
+    document.getElementById('hf-token-input').addEventListener('change', e => localStorage.setItem('hf_token', e.target.value));
+    document.getElementById('hf-raw-repo-input').addEventListener('change', e => localStorage.setItem('hf_raw_repo', e.target.value));
+    document.getElementById('hf-cleaned-repo-input').addEventListener('change', e => localStorage.setItem('hf_cleaned_repo', e.target.value));
+    document.getElementById('hf-chunked-repo-input').addEventListener('change', e => localStorage.setItem('hf_chunked_repo', e.target.value));
+
+    // Load the approved files list on startup
+    loadApprovedFiles();
 }
 
 // =============================================================================

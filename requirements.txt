@@ -1,7 +1,6 @@
 # =============================================================================
 # Mozhii RAG Data Platform - Python Dependencies
 # =============================================================================
-# This file lists all required Python packages for the platform.
 # Install using: pip install -r requirements.txt
 # =============================================================================
 
@@ -14,7 +13,10 @@ Flask-CORS==4.0.0               # Cross-Origin Resource Sharing support
 # -----------------------------------------------------------------------------
 # HuggingFace Integration
 # -----------------------------------------------------------------------------
-huggingface-hub==0.20.0         # Official HuggingFace Hub client library
+# ≥0.21 required for CommitOperationAdd + create_commit batch uploads.
+# Batch uploading all chunks in one commit prevents HF rate-limiting when
+# pushing large sets (e.g. 223 chunks at once).
+huggingface-hub>=0.21.0         # Official HuggingFace Hub client library
 
 # -----------------------------------------------------------------------------
 # Environment & Configuration
@@ -24,10 +26,12 @@ python-dotenv==1.0.0            # Load environment variables from .env file
 # -----------------------------------------------------------------------------
 # Production Server
 # -----------------------------------------------------------------------------
+# gthread worker class (built-in) enables multi-threading so multiple users
+# can submit chunks / trigger pushes simultaneously without blocking each other.
 gunicorn==21.2.0                # Production WSGI server for deployment
 
 # -----------------------------------------------------------------------------
 # Utilities
 # -----------------------------------------------------------------------------
-uuid==1.30                      # UUID generation for unique identifiers
+# NOTE: 'uuid' is NOT listed here — it is part of Python's standard library.
 python-dateutil==2.8.2          # Date/time utilities

@@ -190,19 +190,8 @@
                     </button>
                     <button class="btn btn-primary" id="raw-submit">
                         <span class="btn-icon">📤</span>
-                        Submit
+                        Submit for Review
                     </button>
-                </div>
-            </div>
-            
-            <!-- Submitted Raw Files List -->
-            <div class="submitted-files-section">
-                <div class="panel-section-header">
-                    <h3>📄 Submitted Raw Files</h3>
-                    <button class="btn btn-sm" id="raw-refresh-list">↻ Refresh</button>
-                </div>
-                <div class="submitted-files-list" id="raw-files-list">
-                    <div class="empty-state small"><p>No files submitted yet</p></div>
                 </div>
             </div>
         </section>
@@ -275,17 +264,6 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- Submitted Cleaned Files List -->
-            <div class="submitted-files-section">
-                <div class="panel-section-header">
-                    <h3>🧹 Submitted Cleaned Files</h3>
-                    <button class="btn btn-sm" id="cleaning-refresh-list">↻ Refresh</button>
-                </div>
-                <div class="submitted-files-list" id="cleaned-files-list">
-                    <div class="empty-state small"><p>No cleaned files submitted yet</p></div>
-                </div>
-            </div>
         </section>
 
         <!-- =============================================================== -->
@@ -344,28 +322,6 @@
                             class="tamil-text"
                             disabled
                         ></textarea>
-                    </div>
-                    
-                    <!-- Heading -->
-                    <div class="form-group">
-                        <label for="chunk-heading">Heading</label>
-                        <input 
-                            type="text" 
-                            id="chunk-heading" 
-                            placeholder="Enter chunk heading / title..."
-                            disabled
-                        >
-                    </div>
-
-                    <!-- Sub Heading -->
-                    <div class="form-group">
-                        <label for="chunk-sub-heading">Sub Heading</label>
-                        <input 
-                            type="text" 
-                            id="chunk-sub-heading" 
-                            placeholder="Enter sub heading..."
-                            disabled
-                        >
                     </div>
                     
                     <!-- Category Select -->
@@ -446,10 +402,10 @@
             <h3>⚙️ Admin Panel</h3>
             <button class="close-btn" id="adminClose">✕</button>
         </div>
-        
-        <!-- Scrollable Content Wrapper -->
-        <div class="sidebar-scroll-content">
-        
+
+        <!-- Scrollable body — all sections scroll as one -->
+        <div class="sidebar-body">
+
         <!-- Stats Overview -->
         <div class="stats-overview">
             <div class="stat-card">
@@ -484,8 +440,6 @@
             </div>
         </div>
         
-        </div><!-- end sidebar-scroll-content -->
-        
         <!-- HuggingFace Configuration -->
         <div class="sync-section">
             <h4>🤗 HuggingFace Setup</h4>
@@ -503,8 +457,7 @@
                 <input 
                     type="text" 
                     id="hf-raw-repo-input" 
-                    placeholder="username/mozhii-raw-data" 
-                    value="Mozhii-AI/Raw_Data"
+                    placeholder="Mozhii-AI/Raw_Data" 
                     style="font-size: 0.85rem; padding: 0.5rem;"
                 >
             </div>
@@ -513,8 +466,7 @@
                 <input 
                     type="text" 
                     id="hf-cleaned-repo-input" 
-                    placeholder="username/mozhii-cleaned-data" 
-                    value="Mozhii-AI/Cleaned"
+                    placeholder="Mozhii-AI/Cleaned" 
                     style="font-size: 0.85rem; padding: 0.5rem;"
                 >
             </div>
@@ -523,19 +475,37 @@
                 <input 
                     type="text" 
                     id="hf-chunked-repo-input" 
-                    placeholder="username/mozhii-chunked-data" 
-                    value="Mozhii-AI/Chunk"
+                    placeholder="Mozhii-AI/Chunk" 
                     style="font-size: 0.85rem; padding: 0.5rem;"
                 >
             </div>
-            <button class="btn btn-secondary full-width" id="test-hf-btn" style="margin-bottom: 0.5rem;">
-                🔌 Test Connection & Create Repos
+
+            <!-- =========================================================== -->
+            <!-- PER-FILE PUSH — each approved file gets its own Push button  -->
+            <!-- =========================================================== -->
+            <div class="approved-files-push" id="approved-files-push-section">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin:0.75rem 0 0.4rem;">
+                    <span style="font-size:0.85rem;font-weight:600;">✅ Approved Files</span>
+                    <button class="btn btn-secondary" id="refresh-approved-btn" style="padding:0.2rem 0.6rem;font-size:0.75rem;">↻ Refresh</button>
+                </div>
+                <div id="approved-files-list" style="border:1px solid var(--border);border-radius:8px;padding:0.3rem;">
+                    <div class="empty-state small" style="padding:0.6rem;text-align:center;font-size:0.8rem;color:var(--text-secondary);">
+                        Loading…
+                    </div>
+                </div>
+                <span style="font-size:0.72rem;color:var(--text-secondary);display:block;margin-top:0.3rem;">
+                    Each member pushes only their own file.
+                </span>
+            </div>
+
+            <!-- Global push-all — for admin bulk use -->
+            <button class="btn btn-secondary full-width" id="sync-hf-btn" style="margin-top:0.75rem;">
+                🚀 Push ALL Files (Admin)
             </button>
-            <button class="btn btn-primary full-width" id="sync-hf-btn">
-                🚀 Push to HuggingFace
-            </button>
-            <span class="sync-info">Push approved data to separate HF repos</span>
-        </div>
+            <span class="sync-info">Pushes every un-pushed approved file at once</span>
+        </div><!-- /.sync-section -->
+
+        </div><!-- /.sidebar-body -->
     </aside>
     
     <!-- Overlay for mobile -->

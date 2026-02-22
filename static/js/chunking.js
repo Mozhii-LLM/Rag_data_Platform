@@ -33,8 +33,6 @@ const ChunkingElements = {
     
     // Form elements
     chunkText: null,
-    chunkHeading: null,
-    chunkSubHeading: null,
     chunkCategory: null,
     chunkSource: null,
     chunkOverlap: null,
@@ -54,8 +52,6 @@ const ChunkingElements = {
         this.sourceInfo = document.getElementById('chunking-source-info');
         this.chunksList = document.getElementById('chunks-list');
         this.chunkText = document.getElementById('chunk-text');
-        this.chunkHeading = document.getElementById('chunk-heading');
-        this.chunkSubHeading = document.getElementById('chunk-sub-heading');
         this.chunkCategory = document.getElementById('chunk-category');
         this.chunkSource = document.getElementById('chunk-source');
         this.chunkOverlap = document.getElementById('chunk-overlap');
@@ -257,64 +253,11 @@ function renderChunksList() {
     
     ChunkingElements.chunksList.innerHTML = chunks.map(chunk => `
         <div class="chunk-item">
-            <div class="chunk-item-main">
-                <span class="chunk-id">#${chunk.chunk_index}</span>
-                <span class="chunk-preview">${chunk.text.substring(0, 50)}...</span>
-                <span class="file-status ${chunk.status || 'pending'}">${chunk.status || 'pending'}</span>
-                ${(chunk.status || 'pending') === 'pending' ? `<button class="btn btn-error btn-sm chunk-remove-btn" data-index="${chunk.chunk_index}" title="Remove chunk">✕</button>` : ''}
-            </div>
-            <div class="chunk-item-meta">
-                ${chunk.heading ? `<span class="chunk-meta-tag">📝 ${chunk.heading}</span>` : ''}
-                ${chunk.sub_heading ? `<span class="chunk-meta-tag">🧷 ${chunk.sub_heading}</span>` : ''}
-                <span class="chunk-meta-tag">📂 ${chunk.category || 'N/A'}</span>
-                <span class="chunk-meta-tag">🔗 ${chunk.source || 'N/A'}</span>
-            </div>
+            <span class="chunk-id">#${chunk.chunk_index}</span>
+            <span class="chunk-preview">${chunk.text.substring(0, 50)}...</span>
+            <span class="file-status ${chunk.status || 'pending'}">${chunk.status || 'pending'}</span>
         </div>
     `).join('');
-
-    // Attach remove handlers
-    ChunkingElements.chunksList.querySelectorAll('.chunk-remove-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const chunkIndex = parseInt(btn.dataset.index);
-            confirmRemoveChunk(chunkIndex);
-        });
-    });
-}
-
-/**
- * Confirm and remove a pending chunk
- */
-function confirmRemoveChunk(chunkIndex) {
-    showModal('Remove Chunk', `<p>Are you sure you want to remove Chunk #${chunkIndex}?</p>`, [
-        { text: 'Cancel', class: 'btn-secondary', onClick: hideModal },
-        { text: 'Remove', class: 'btn-error', onClick: () => {
-            hideModal();
-            removeChunk(chunkIndex);
-        }}
-    ]);
-}
-
-/**
- * Delete a pending chunk via API
- */
-async function removeChunk(chunkIndex) {
-    try {
-        const response = await api(`/api/chunking/chunk/${ChunkingState.selectedFilename}/${chunkIndex}`, {
-            method: 'DELETE'
-        });
-
-        if (response.success) {
-            showToast('Chunk Removed', `Chunk #${chunkIndex} has been removed.`, 'success');
-            await loadChunksForFile(ChunkingState.selectedFilename);
-            await refreshChunkingFiles();
-            refreshAdminData();
-        } else {
-            throw new Error(response.error || 'Failed to remove chunk');
-        }
-    } catch (error) {
-        showToast('Remove Failed', error.message, 'error');
-    }
 }
 
 // =============================================================================
@@ -326,8 +269,6 @@ async function removeChunk(chunkIndex) {
  */
 function enableChunkingForm() {
     ChunkingElements.chunkText.disabled = false;
-    ChunkingElements.chunkHeading.disabled = false;
-    ChunkingElements.chunkSubHeading.disabled = false;
     ChunkingElements.chunkCategory.disabled = false;
     ChunkingElements.chunkSource.disabled = false;
     ChunkingElements.chunkOverlap.disabled = false;
@@ -340,8 +281,6 @@ function enableChunkingForm() {
  */
 function disableChunkingForm() {
     ChunkingElements.chunkText.disabled = true;
-    ChunkingElements.chunkHeading.disabled = true;
-    ChunkingElements.chunkSubHeading.disabled = true;
     ChunkingElements.chunkCategory.disabled = true;
     ChunkingElements.chunkSource.disabled = true;
     ChunkingElements.chunkOverlap.disabled = true;
@@ -363,8 +302,6 @@ function updateChunkCharCount() {
  */
 function clearChunkForm() {
     ChunkingElements.chunkText.value = '';
-    ChunkingElements.chunkHeading.value = '';
-    ChunkingElements.chunkSubHeading.value = '';
     ChunkingElements.chunkOverlap.value = '';
     updateChunkCharCount();
 }
@@ -402,8 +339,6 @@ function previewChunk() {
     // Build preview object
     const preview = {
         chunk_id: chunkId,
-        heading: ChunkingElements.chunkHeading.value.trim() || undefined,
-        sub_heading: ChunkingElements.chunkSubHeading.value.trim() || undefined,
         text: ChunkingElements.chunkText.value.trim(),
         language: ChunkingState.selectedFile?.language || 'ta',
         category: ChunkingElements.chunkCategory.value,
@@ -462,8 +397,6 @@ async function handleChunkSubmit() {
         const chunkData = {
             filename: ChunkingState.selectedFilename,
             text: text,
-            heading: ChunkingElements.chunkHeading.value.trim() || undefined,
-            sub_heading: ChunkingElements.chunkSubHeading.value.trim() || undefined,
             category: ChunkingElements.chunkCategory.value,
             source: ChunkingElements.chunkSource.value || undefined,
             overlap_reference: ChunkingElements.chunkOverlap.value.trim() || undefined

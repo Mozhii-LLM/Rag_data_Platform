@@ -191,28 +191,18 @@ async function handleRawDataSubmit() {
         });
         
         if (response.success) {
-            // Check HuggingFace upload status
-            const hf = response.huggingface;
-            if (hf && hf.success) {
-                showToast(
-                    'Uploaded to HuggingFace!', 
-                    `"${formData.filename}.txt" saved to HuggingFace successfully.`,
-                    'success'
-                );
-            } else {
-                const hfError = hf ? hf.error : 'Unknown error';
-                showToast(
-                    'Saved Locally', 
-                    `"${formData.filename}" saved locally. HuggingFace upload failed: ${hfError}`,
-                    'warning'
-                );
-            }
+            // Show success message
+            showToast(
+                'Submitted Successfully!', 
+                `"${formData.filename}" is now pending admin approval.`,
+                'success'
+            );
             
             // Clear the form
             clearRawDataForm();
             
-            // Refresh the submitted files list
-            refreshRawFilesList();
+            // Refresh admin badge
+            refreshAdminData();
             
         } else {
             throw new Error(response.error || 'Submission failed');
@@ -225,120 +215,7 @@ async function handleRawDataSubmit() {
     } finally {
         // Re-enable submit button
         RawDataElements.submitBtn.disabled = false;
-        RawDataElements.submitBtn.innerHTML = '<span class="btn-icon">📤</span> Submit';
-    }
-}
-
-// =============================================================================
-// SUBMITTED FILES LIST
-// =============================================================================
-
-/**
- * Refresh the list of submitted (approved) raw files
- */
-async function refreshRawFilesList() {
-    const listEl = document.getElementById('raw-files-list');
-    if (!listEl) return;
-    
-    try {
-        const response = await api('/api/raw/approved');
-        
-        if (response.success && response.files.length > 0) {
-            listEl.innerHTML = response.files.map(file => `
-                <div class="submitted-file-item">
-                    <div class="submitted-file-info">
-                        <span class="submitted-file-name">${file.filename}</span>
-                        <span class="submitted-file-meta">${(file.language || 'ta').toUpperCase()} • ${(file.content_length || 0).toLocaleString()} chars • ${file.source || 'unknown'}</span>
-                    </div>
-                    <div class="submitted-file-actions">
-                        <button class="btn btn-sm btn-secondary" onclick="editRawFile('${file.filename}')" title="Edit">✏️</button>
-                        <button class="btn btn-sm btn-error" onclick="deleteRawFile('${file.filename}')" title="Remove">✕</button>
-                    </div>
-                </div>
-            `).join('');
-        } else {
-            listEl.innerHTML = '<div class="empty-state small"><p>No files submitted yet</p></div>';
-        }
-    } catch (error) {
-        console.error('Error loading raw files list:', error);
-    }
-}
-
-/**
- * Delete a raw file
- */
-async function deleteRawFile(filename) {
-    showModal('Delete File', `<p>Are you sure you want to delete "<strong>${filename}</strong>"?</p>`, [
-        { text: 'Cancel', class: 'btn-secondary', onClick: hideModal },
-        { text: 'Delete', class: 'btn-error', onClick: async () => {
-            hideModal();
-            try {
-                const response = await api(`/api/raw/file/${filename}`, { method: 'DELETE' });
-                if (response.success) {
-                    showToast('Deleted', `"${filename}" has been deleted.`, 'success');
-                    refreshRawFilesList();
-                } else {
-                    showToast('Error', response.error || 'Failed to delete', 'error');
-                }
-            } catch (error) {
-                showToast('Error', error.message, 'error');
-            }
-        }}
-    ]);
-}
-
-/**
- * Edit a raw file
- */
-async function editRawFile(filename) {
-    try {
-        const data = await api(`/api/raw/file/${filename}`);
-        if (!data.success) {
-            showToast('Error', 'Failed to load file', 'error');
-            return;
-        }
-        
-        showModal(`Edit - ${filename}`, `
-            <div class="edit-form">
-                <div class="form-group">
-                    <label>Content <span class="char-count" id="raw-edit-char-count">${data.content.length} characters</span></label>
-                    <textarea id="raw-edit-content" rows="15" class="tamil-text">${data.content}</textarea>
-                </div>
-            </div>
-        `, [
-            { text: 'Cancel', class: 'btn-secondary', onClick: hideModal },
-            { text: 'Save', class: 'btn-primary', onClick: async () => {
-                const newContent = document.getElementById('raw-edit-content').value;
-                if (!newContent.trim()) {
-                    showToast('Error', 'Content cannot be empty', 'error');
-                    return;
-                }
-                try {
-                    const result = await api(`/api/raw/file/${filename}`, {
-                        method: 'PUT',
-                        body: JSON.stringify({ content: newContent })
-                    });
-                    if (result.success) {
-                        showToast('Saved', `"${filename}" updated.`, 'success');
-                        hideModal();
-                        refreshRawFilesList();
-                    } else {
-                        showToast('Error', result.error || 'Failed to save', 'error');
-                    }
-                } catch (error) {
-                    showToast('Error', error.message, 'error');
-                }
-            }}
-        ]);
-        
-        // Update char count as user types
-        const contentArea = document.getElementById('raw-edit-content');
-        const charCount = document.getElementById('raw-edit-char-count');
-        contentArea.addEventListener('input', () => {
-            charCount.textContent = `${contentArea.value.length} characters`;
-        });
-    } catch (error) {
-        showToast('Error', error.message, 'error');
+        RawDataElements.submitBtn.innerHTML = '<span class="btn-icon">📤</span> Submit for Review';
     }
 }
 
@@ -433,15 +310,6 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Initialize character count
     updateCharCount();
-    
-    // Load submitted files list
-    refreshRawFilesList();
-    
-    // Refresh list button
-    const refreshListBtn = document.getElementById('raw-refresh-list');
-    if (refreshListBtn) {
-        refreshListBtn.addEventListener('click', refreshRawFilesList);
-    }
     
     console.log('📥 Raw Data tab initialized');
 });

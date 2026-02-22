@@ -489,60 +489,6 @@ select {
 }
 
 /* =============================================================================
-   SUBMITTED FILES SECTION
-============================================================================= */
-.submitted-files-section {
-    margin-top: var(--spacing-xl);
-    padding: var(--spacing-lg);
-    background: var(--bg-surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-}
-
-.submitted-files-list {
-    display: flex;
-    flex-direction: column;
-    gap: var(--spacing-sm);
-    max-height: 300px;
-    overflow-y: auto;
-}
-
-.submitted-file-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--spacing-sm) var(--spacing-md);
-    background: var(--bg-elevated);
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border);
-}
-
-.submitted-file-info {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-    flex: 1;
-}
-
-.submitted-file-name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--text-primary);
-}
-
-.submitted-file-meta {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-}
-
-.submitted-file-actions {
-    display: flex;
-    gap: var(--spacing-xs);
-    flex-shrink: 0;
-}
-
-/* =============================================================================
    BUTTONS
 ============================================================================= */
 .btn {
@@ -785,36 +731,12 @@ select {
 
 .chunk-item {
     display: flex;
-    flex-direction: column;
-    gap: 4px;
+    align-items: center;
+    gap: var(--spacing-sm);
     padding: var(--spacing-sm);
     background: var(--bg-elevated);
     border-radius: var(--radius-sm);
     font-size: 0.8rem;
-}
-
-.chunk-item-main {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-}
-
-.chunk-item-meta {
-    display: flex;
-    gap: var(--spacing-sm);
-    padding-left: 2rem;
-}
-
-.chunk-meta-tag {
-    font-size: 0.7rem;
-    color: var(--text-muted);
-    background: var(--bg-main);
-    padding: 2px 6px;
-    border-radius: var(--radius-sm);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 140px;
 }
 
 .chunk-item .chunk-id {
@@ -828,20 +750,6 @@ select {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-}
-
-.chunk-remove-btn {
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    padding: 0;
-    font-size: 0.75rem;
-    line-height: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
 }
 
 /* =============================================================================
@@ -862,14 +770,31 @@ select {
     overflow: hidden;
 }
 
-.sidebar-scroll-content {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-}
-
 .admin-sidebar.open {
     right: 0;
+}
+
+/* Scrollable content area inside the sidebar */
+.sidebar-body {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    display: flex;
+    flex-direction: column;
+    padding-bottom: 1.5rem;
+    /* Custom thin scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.sidebar-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+.sidebar-body::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
 }
 
 .sidebar-header {
@@ -944,11 +869,23 @@ select {
 }
 
 .pending-list {
-    max-height: 150px;
+    max-height: 200px;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
     gap: var(--spacing-xs);
+    /* Thin scrollbar */
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+}
+
+.pending-list::-webkit-scrollbar {
+    width: 4px;
+}
+
+.pending-list::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 4px;
 }
 
 .pending-item {
@@ -978,9 +915,9 @@ select {
 }
 
 .sync-section {
-    flex-shrink: 0;
     padding: var(--spacing-lg);
     border-top: 1px solid var(--border);
+    margin-top: var(--spacing-md);
 }
 
 .sync-info {

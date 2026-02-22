@@ -35,6 +35,7 @@ Each JSON:
 from flask import Blueprint, request, jsonify, current_app
 import os
 import json
+import fcntl
 from datetime import datetime
 import uuid
 
@@ -70,6 +71,56 @@ def generate_chunk_id(language, category, filename, index):
     file_short = filename.replace('_', '')[:10]
     
     return f"{language}_{cat_short}_{file_short}_{index:02d}"
+
+
+# -----------------------------------------------------------------------------
+# Helper: Calculate Max Chunk Index
+# -----------------------------------------------------------------------------
+def _calc_max_index(pending_dir: str, approved_dir: str) -> int:
+    """
+    Return max(existing chunk indices) + 1.
+    Must be called while the per-filename file-lock is held.
+    """
+    max_idx = 0
+    for directory in (pending_dir, approved_dir):
+        if os.path.exists(directory):
+            for fname in os.listdir(directory):
+                if fname.endswith('.json') and not fname.startswith('_'):
+                    try:
+                        idx = int(fname.replace('chunk_', '').replace('.json', ''))
+                        if idx > max_idx:
+                            max_idx = idx
+                    except ValueError:
+                        pass
+    return max_idx + 1
+
+
+# -----------------------------------------------------------------------------
+# Helper: Per-filename Lock Context
+# -----------------------------------------------------------------------------
+import contextlib
+
+@contextlib.contextmanager
+def _chunk_lock(filename: str):
+    """
+    Acquire an exclusive per-filename file lock.
+    Ensures two simultaneous chunk submissions for the same source file
+    never claim the same chunk_index.
+
+    Usage:
+        with _chunk_lock(filename):
+            # safe: calculate index + save file here
+    """
+    from ..config import Config
+    lock_dir = os.path.join(Config.PENDING_CHUNKED_DIR, '_locks')
+    os.makedirs(lock_dir, exist_ok=True)
+    lock_path = os.path.join(lock_dir, f'{filename}.lock')
+    with open(lock_path, 'w') as fh:
+        fcntl.flock(fh, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(fh, fcntl.LOCK_UN)
 
 
 # -----------------------------------------------------------------------------
@@ -239,8 +290,6 @@ def submit_chunk():
         
         filename = data['filename'].strip()
         text = data['text']
-        heading = data.get('heading', '')
-        sub_heading = data.get('sub_heading', '')
         category = data['category']
         source = data.get('source', 'unknown')
         overlap_reference = data.get('overlap_reference', '')
@@ -263,54 +312,38 @@ def submit_chunk():
                 meta = json.load(f)
                 language = meta.get('language', 'ta')
         
-        # Calculate chunk index
         pending_dir = os.path.join(Config.PENDING_CHUNKED_DIR, filename)
         approved_dir = os.path.join(Config.APPROVED_CHUNKED_DIR, filename)
-        
-        existing_count = 0
-        if os.path.exists(pending_dir):
-            existing_count += len([f for f in os.listdir(pending_dir) if f.endswith('.json')])
-        if os.path.exists(approved_dir):
-            existing_count += len([f for f in os.listdir(approved_dir) if f.endswith('.json')])
-        
-        chunk_index = existing_count + 1
-        
-        # Generate chunk ID
-        chunk_id = generate_chunk_id(language, category, filename, chunk_index)
-        
-        # Create chunk object
-        chunk = {
-            'chunk_id': chunk_id,
-            'heading': heading,
-            'sub_heading': sub_heading,
-            'text': text,
-            'language': language,
-            'category': category,
-            'source': source,
-            'chunk_index': chunk_index,
-            'source_file': filename,
-            'overlap_reference': overlap_reference,
-            'created_at': datetime.now().isoformat(),
-            'created_by': 'chunker',
-            'text_length': len(text)
-        }
-        
-        # Create pending chunk directory if needed
         os.makedirs(pending_dir, exist_ok=True)
-        
-        # Save chunk
-        chunk_filename = f'chunk_{chunk_index:02d}.json'
-        chunk_path = os.path.join(pending_dir, chunk_filename)
-        
-        with open(chunk_path, 'w', encoding='utf-8') as f:
-            json.dump(chunk, f, indent=2, ensure_ascii=False)
-        
+
+        # Calculate index AND save the file inside the per-filename exclusive
+        # lock so two simultaneous requests never claim the same chunk_index.
+        with _chunk_lock(filename):
+            chunk_index = _calc_max_index(pending_dir, approved_dir)
+            chunk_id = generate_chunk_id(language, category, filename, chunk_index)
+            chunk = {
+                'chunk_id': chunk_id,
+                'text': text,
+                'language': language,
+                'category': category,
+                'source': source,
+                'chunk_index': chunk_index,
+                'source_file': filename,
+                'overlap_reference': overlap_reference,
+                'created_at': datetime.now().isoformat(),
+                'created_by': 'chunker',
+                'text_length': len(text),
+            }
+            chunk_path = os.path.join(pending_dir, f'chunk_{chunk_index:02d}.json')
+            with open(chunk_path, 'w', encoding='utf-8') as f:
+                json.dump(chunk, f, indent=2, ensure_ascii=False)
+
         return jsonify({
             'success': True,
             'message': 'Chunk created. Awaiting admin approval.',
             'chunk_id': chunk_id,
             'chunk_index': chunk_index,
-            'filename': filename
+            'filename': filename,
         })
         
     except Exception as e:
@@ -380,51 +413,44 @@ def submit_batch():
         # Get starting index
         pending_dir = os.path.join(Config.PENDING_CHUNKED_DIR, filename)
         approved_dir = os.path.join(Config.APPROVED_CHUNKED_DIR, filename)
-        
-        existing_count = 0
-        if os.path.exists(pending_dir):
-            existing_count += len([f for f in os.listdir(pending_dir) if f.endswith('.json')])
-        if os.path.exists(approved_dir):
-            existing_count += len([f for f in os.listdir(approved_dir) if f.endswith('.json')])
-        
+
         # Create pending directory
         os.makedirs(pending_dir, exist_ok=True)
-        
+
         created_chunks = []
-        
-        for i, chunk_data in enumerate(chunks_data):
-            if 'text' not in chunk_data or 'category' not in chunk_data:
-                continue
-            
-            chunk_index = existing_count + i + 1
-            chunk_id = generate_chunk_id(language, chunk_data['category'], filename, chunk_index)
-            
-            chunk = {
-                'chunk_id': chunk_id,
-                'text': chunk_data['text'],
-                'heading': chunk_data.get('heading', ''),
-                'sub_heading': chunk_data.get('sub_heading', ''),
-                'language': language,
-                'category': chunk_data['category'],
-                'source': chunk_data.get('source', 'unknown'),
-                'chunk_index': chunk_index,
-                'source_file': filename,
-                'overlap_reference': chunk_data.get('overlap_reference', ''),
-                'created_at': datetime.now().isoformat(),
-                'created_by': 'chunker',
-                'text_length': len(chunk_data['text'])
-            }
-            
-            chunk_filename = f'chunk_{chunk_index:02d}.json'
-            chunk_path = os.path.join(pending_dir, chunk_filename)
-            
-            with open(chunk_path, 'w', encoding='utf-8') as f:
-                json.dump(chunk, f, indent=2, ensure_ascii=False)
-            
-            created_chunks.append({
-                'chunk_id': chunk_id,
-                'chunk_index': chunk_index
-            })
+
+        # Hold the exclusive lock for the entire batch so all chunks in this
+        # batch get consecutive indices and no concurrent request can grab the
+        # same index.
+        with _chunk_lock(filename):
+            start_index = _calc_max_index(pending_dir, approved_dir)
+
+            for i, chunk_data in enumerate(chunks_data):
+                if 'text' not in chunk_data or 'category' not in chunk_data:
+                    continue
+
+                chunk_index = start_index + i
+                chunk_id = generate_chunk_id(language, chunk_data['category'], filename, chunk_index)
+
+                chunk = {
+                    'chunk_id': chunk_id,
+                    'text': chunk_data['text'],
+                    'language': language,
+                    'category': chunk_data['category'],
+                    'source': chunk_data.get('source', 'unknown'),
+                    'chunk_index': chunk_index,
+                    'source_file': filename,
+                    'overlap_reference': chunk_data.get('overlap_reference', ''),
+                    'created_at': datetime.now().isoformat(),
+                    'created_by': 'chunker',
+                    'text_length': len(chunk_data['text']),
+                }
+
+                chunk_path = os.path.join(pending_dir, f'chunk_{chunk_index:02d}.json')
+                with open(chunk_path, 'w', encoding='utf-8') as f:
+                    json.dump(chunk, f, indent=2, ensure_ascii=False)
+
+                created_chunks.append({'chunk_id': chunk_id, 'chunk_index': chunk_index})
         
         return jsonify({
             'success': True,
