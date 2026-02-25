@@ -1,0 +1,60 @@
+# =============================================================================
+# Mozhii RAG Data Platform - fly.toml
+# =============================================================================
+# fly.io application configuration.
+#
+# Deploy commands:
+#   First time:  fly launch --no-deploy   (imports this file, then run steps below)
+#   Subsequent:  fly deploy
+#
+# One-time setup (run after `fly launch`):
+#   fly volumes create mozhii_data --size 1 --region <your-region>
+#   fly secrets set SECRET_KEY="<random-32-char-string>"
+#   fly secrets set ADMIN_PASSWORD="<your-admin-password>"
+#   fly secrets set HF_TOKEN="hf_..."          # optional, for HuggingFace push
+#   fly secrets set HF_RAW_REPO="Mozhii-AI/Raw_Data"
+#   fly secrets set HF_CLEANED_REPO="Mozhii-AI/Cleaned"
+#   fly secrets set HF_CHUNKED_REPO="Mozhii-AI/Chunk"
+#   fly deploy
+# =============================================================================
+
+app = "mozhii-platform"
+primary_region = "sin"          # Singapore — closest to Tamil Nadu
+kill_signal = "SIGINT"
+kill_timeout = "30s"
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+[build]
+  dockerfile = "Dockerfile"
+
+# ── Environment variables (non-secret) ───────────────────────────────────────
+[env]
+  PORT    = "8080"
+  DEBUG   = "False"
+
+# ── HTTP service ──────────────────────────────────────────────────────────────
+[http_service]
+  internal_port       = 8080
+  force_https         = true
+  auto_stop_machines  = true    # scale to zero when idle (free tier friendly)
+  auto_start_machines = true
+  min_machines_running = 0
+
+  # Increase timeouts for long-running HuggingFace push operations
+  [http_service.concurrency]
+    type       = "requests"
+    hard_limit = 50
+    soft_limit = 40
+
+# ── Persistent volume ─────────────────────────────────────────────────────────
+# Mounts at /app/data — exactly where the app stores pending/approved files.
+# Create with: fly volumes create mozhii_data --size 1 --region sin
+[[mounts]]
+  source      = "mozhii_data"
+  destination = "/app/data"
+
+# ── Resources ─────────────────────────────────────────────────────────────────
+[[vm]]
+  cpu_kind  = "shared"
+  cpus      = 1
+  memory_mb = 512

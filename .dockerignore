@@ -1,0 +1,43 @@
+# =============================================================================
+# .dockerignore — Mozhii RAG Data Platform
+# =============================================================================
+# Excludes files from the Docker build context to keep the image lean
+# and avoid baking local data / secrets into the image.
+# =============================================================================
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env
+
+# Local data (mounted as a fly.io volume at runtime)
+data/
+
+# Python byte-code & caches
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# Docs & local config (not needed in container)
+*.md
+render.yaml
+
+# Tests
+tests/
+test_*.py
