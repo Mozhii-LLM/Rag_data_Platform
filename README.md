@@ -1,3 +1,13 @@
+---
+title: Mozhii RAG Data Platform
+emoji: 🏗️
+colorFrom: blue
+colorTo: purple
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 🏗️ Mozhii RAG Data Platform v0.1
 
 ## Creating Universal Tamil AI Ecosystem

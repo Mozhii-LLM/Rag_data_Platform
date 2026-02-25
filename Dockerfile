@@ -1,26 +1,28 @@
 # =============================================================================
 # Mozhii RAG Data Platform - Dockerfile
 # =============================================================================
-# Builds a production-ready container image for fly.io deployment.
-#
-# Multi-stage is overkill here; a single slim stage keeps things simple
-# while still being lean (~200 MB final image).
+# Compatible with:
+#   - HuggingFace Spaces (Docker SDK)  → port 7860, non-root uid 1000
+#   - fly.io                           → set PORT=8080 in fly.toml env
+#   - Render                           → set PORT=10000 via env
 # =============================================================================
 
 FROM python:3.11-slim
 
 # ── System packages ───────────────────────────────────────────────────────────
-# No extra system deps required for this Flask + HuggingFace app.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
     && rm -rf /var/lib/apt/lists/*
+
+# ── Non-root user (required by HuggingFace Spaces) ───────────────────────────
+# HF Spaces runs containers as uid=1000. Creating the user explicitly lets us
+# set correct ownership on the data directory.
+RUN useradd -m -u 1000 appuser
 
 # ── Working directory ─────────────────────────────────────────────────────────
 WORKDIR /app
 
 # ── Python dependencies ───────────────────────────────────────────────────────
-# Copy requirements first so Docker can cache this layer independently
-# from source code changes.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt gunicorn==21.2.0
 
@@ -28,25 +30,28 @@ RUN pip install --no-cache-dir -r requirements.txt gunicorn==21.2.0
 COPY . .
 
 # ── Persistent data directories ───────────────────────────────────────────────
-# Create the full directory tree so the app can start even before the
-# fly.io volume is attached (volume replaces this at runtime).
+# Create full directory tree and give ownership to appuser.
 RUN mkdir -p \
     data/pending/raw \
     data/pending/cleaned \
     data/pending/chunked/_locks \
     data/approved/raw \
     data/approved/cleaned \
-    data/approved/chunked
+    data/approved/chunked \
+    && chown -R appuser:appuser /app
+
+# ── Switch to non-root user ───────────────────────────────────────────────────
+USER appuser
 
 # ── Runtime configuration ─────────────────────────────────────────────────────
-# fly.io routes external HTTPS → internal 8080.
-# Gunicorn reads PORT from the environment (set in fly.toml).
-ENV PORT=8080
-EXPOSE 8080
+# HuggingFace Spaces requires port 7860.
+# Override with PORT env var for fly.io (8080) or Render (10000).
+ENV PORT=7860
+EXPOSE 7860
 
 # ── Health check ──────────────────────────────────────────────────────────────
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD curl -f http://localhost:8080/ || exit 1
+    CMD curl -f http://localhost:${PORT}/ || exit 1
 
 # ── Start command ─────────────────────────────────────────────────────────────
 CMD ["gunicorn", "app:create_app()", "-c", "gunicorn_config.py"]
