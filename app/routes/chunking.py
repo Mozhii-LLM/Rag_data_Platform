@@ -293,6 +293,8 @@ def submit_chunk():
         category = data['category']
         source = data.get('source', 'unknown')
         overlap_reference = data.get('overlap_reference', '')
+        heading = data.get('heading', '')
+        sub_heading = data.get('sub_heading', '')
         
         from ..config import Config
         
@@ -323,6 +325,8 @@ def submit_chunk():
             chunk_id = generate_chunk_id(language, category, filename, chunk_index)
             chunk = {
                 'chunk_id': chunk_id,
+                'heading': heading,
+                'sub_heading': sub_heading,
                 'text': text,
                 'language': language,
                 'category': category,

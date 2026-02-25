@@ -32,6 +32,8 @@ const ChunkingElements = {
     chunksList: null,
     
     // Form elements
+    chunkHeading: null,
+    chunkSubheading: null,
     chunkText: null,
     chunkCategory: null,
     chunkSource: null,
@@ -51,6 +53,8 @@ const ChunkingElements = {
         this.sourceContent = document.getElementById('chunking-source-content');
         this.sourceInfo = document.getElementById('chunking-source-info');
         this.chunksList = document.getElementById('chunks-list');
+        this.chunkHeading = document.getElementById('chunk-heading');
+        this.chunkSubheading = document.getElementById('chunk-subheading');
         this.chunkText = document.getElementById('chunk-text');
         this.chunkCategory = document.getElementById('chunk-category');
         this.chunkSource = document.getElementById('chunk-source');
@@ -268,6 +272,8 @@ function renderChunksList() {
  * Enable the chunking form elements
  */
 function enableChunkingForm() {
+    ChunkingElements.chunkHeading.disabled = false;
+    ChunkingElements.chunkSubheading.disabled = false;
     ChunkingElements.chunkText.disabled = false;
     ChunkingElements.chunkCategory.disabled = false;
     ChunkingElements.chunkSource.disabled = false;
@@ -280,6 +286,8 @@ function enableChunkingForm() {
  * Disable the chunking form elements
  */
 function disableChunkingForm() {
+    ChunkingElements.chunkHeading.disabled = true;
+    ChunkingElements.chunkSubheading.disabled = true;
     ChunkingElements.chunkText.disabled = true;
     ChunkingElements.chunkCategory.disabled = true;
     ChunkingElements.chunkSource.disabled = true;
@@ -301,6 +309,8 @@ function updateChunkCharCount() {
  * Clear the chunk form
  */
 function clearChunkForm() {
+    ChunkingElements.chunkHeading.value = '';
+    ChunkingElements.chunkSubheading.value = '';
     ChunkingElements.chunkText.value = '';
     ChunkingElements.chunkOverlap.value = '';
     updateChunkCharCount();
@@ -339,6 +349,8 @@ function previewChunk() {
     // Build preview object
     const preview = {
         chunk_id: chunkId,
+        heading: ChunkingElements.chunkHeading.value.trim(),
+        sub_heading: ChunkingElements.chunkSubheading.value.trim(),
         text: ChunkingElements.chunkText.value.trim(),
         language: ChunkingState.selectedFile?.language || 'ta',
         category: ChunkingElements.chunkCategory.value,
@@ -396,6 +408,8 @@ async function handleChunkSubmit() {
         // Prepare chunk data
         const chunkData = {
             filename: ChunkingState.selectedFilename,
+            heading: ChunkingElements.chunkHeading.value.trim() || undefined,
+            sub_heading: ChunkingElements.chunkSubheading.value.trim() || undefined,
             text: text,
             category: ChunkingElements.chunkCategory.value,
             source: ChunkingElements.chunkSource.value || undefined,
